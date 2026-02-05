@@ -51,10 +51,27 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\setup_processed.iss
 
-      # Upload EXE as an Action Artifact
-      - name: Upload Installer
+      # Bundle everything into a zip
+      - name: Bundle Artifacts
+        run: |
+          New-Item -ItemType Directory -Force -Path bundled
+          Copy-Item stock-opname-app.exe -Destination bundled
+          Copy-Item -Path installer -Destination bundled -Recurse
+          Copy-Item -Path assets -Destination bundled -Recurse
+          Copy-Item windows/LICENSE -Destination bundled
+          Compress-Archive -Path bundled/* -DestinationPath stock-opname-app-windows.zip
+
+      # Upload Zip as an Action Artifact
+      - name: Upload Windows Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: "installer/*.exe"
+          name: windows-bundle
+          path: "stock-opname-app-windows.zip"
           retention-days: 5
+
+      # Upload Zip to the Release (Tag only)
+      - name: Upload Bundle to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: "stock-opname-app-windows.zip"
