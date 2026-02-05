@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 2. Build Windows Installer (EXE)
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      # Build binary manually on Windows to allow parallel execution
+      - name: Build Windows Binary
+        run: |
+          go build -ldflags "-s -w -X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }}" -o stock-opname-app.exe .
+
+      # Replace template variables in setup.iss manually
+      - name: Prepare Inno Setup Script
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          # If not a tag, use a placebo version for the MSI build
+          if ("${{ github.ref_type }}" -ne "tag") {
+            $version = "0.0.1"
+          } else {
+            $version = $version.TrimStart("v")
+          }
+          
+          Write-Host "Using version: $version"
+
+          $content = Get-Content windows\setup.iss
+          $content = $content -replace '\{\{.Version\}\}', $version
+          $content | Set-Content windows\setup_processed.iss
+
+      # Compile Installer using Inno Setup
+      - name: Install Inno Setup
+        run: choco install innosetup
+
+      - name: Build Installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\setup_processed.iss
+
+      # Upload EXE as an Action Artifact
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: "installer/*.exe"
+          retention-days: 5
