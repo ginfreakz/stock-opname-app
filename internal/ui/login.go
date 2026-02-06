@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"database/sql"
+	
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -29,11 +31,36 @@ func LoginPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	password := widget.NewPasswordEntry()
 	password.SetPlaceHolder("Password")
 
+	// Status label for showing errors
+	statusLabel := widget.NewLabel("")
+	statusLabel.Hide()
+
 	loginBtn := widget.NewButton("Login", func() {
-		if username.Text != "" && password.Text != "" {
-			s.Username = username.Text
-			w.SetContent(HomePage(w, s))
+		if username.Text == "" || password.Text == "" {
+			statusLabel.SetText("Username dan Password harus diisi!")
+			statusLabel.Show()
+			return
 		}
+
+		// Authenticate with database
+		user, err := s.UserRepo.Authenticate(username.Text, password.Text)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				statusLabel.SetText("Username atau Password salah!")
+			} else {
+				statusLabel.SetText("Error: " + err.Error())
+			}
+			statusLabel.Show()
+			return
+		}
+
+		// Set session data
+		s.IsLoggedIn = true
+		s.Username = user.Username
+		s.User = user
+
+		// Navigate to home page
+		w.SetContent(HomePage(w, s))
 	})
 	loginBtn.Importance = widget.HighImportance
 
@@ -46,13 +73,14 @@ func LoginPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		header,
 		username,
 		password,
+		statusLabel,
 		loginBtn,
 	)
 
 	card := widget.NewCard("", "", form)
 
 	cardContainer := container.NewGridWrap(
-		fyne.NewSize(360, 240),
+		fyne.NewSize(360, 280),
 		card,
 	)
 

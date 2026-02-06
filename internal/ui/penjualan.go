@@ -12,16 +12,21 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	
+	"fyne-app/internal/models"
 	"fyne-app/internal/state"
+	"github.com/google/uuid"
 )
 
 type PenjualanHeader struct {
+	ID       uuid.UUID
 	TglNota  string
 	NoNota   string
 	Customer string
 }
 
 type PenjualanItem struct {
+	ItemID     uuid.UUID
 	KodeBarang string
 	NamaBarang string
 	Qty        string
@@ -34,10 +39,7 @@ type PenjualanFull struct {
 	Items  []PenjualanItem
 }
 
-// Global data storage (replace with database later)
-var penjualanData []PenjualanFull
-
-func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
+func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	// Header form fields
 	tglNota := widget.NewEntry()
 	tglNota.SetText(time.Now().Format("2006-01-02"))
@@ -83,6 +85,27 @@ func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
 	})
 	harga.PlaceHolder = "Pilih Harga"
 
+	// Store selected item for validation
+	var selectedItem *models.Item
+
+	// Kode barang lookup
+	kodeBarang.OnChanged = func(code string) {
+		if code == "" {
+			namaBarang.SetText("")
+			selectedItem = nil
+			return
+		}
+		
+		item, err := s.ItemRepo.GetByCode(code)
+		if err == nil {
+			namaBarang.SetText(item.Name)
+			selectedItem = item
+		} else {
+			namaBarang.SetText("Item tidak ditemukan")
+			selectedItem = nil
+		}
+	}
+
 	// Items table data
 	var items []PenjualanItem
 	var itemsTable *widget.Table
@@ -97,28 +120,40 @@ func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
 	// Add item button
 	addItemBtn := widget.NewButton("Add", func() {
 		// Validate inputs
-		if kodeBarang.Text == "" || namaBarang.Text == "" || qty.Text == "" || harga.Selected == "" {
-			dialog.ShowInformation("Error", "Semua field item harus diisi!", w)
+		if kodeBarang.Text == "" || selectedItem == nil || qty.Text == "" || harga.Selected == "" {
+			dialog.ShowInformation("Error", "Semua field item harus diisi dan kode barang harus valid!", w)
 			return
 		}
 
-		// For demo, use dummy price values
+		// Get price based on selection
 		var hargaVal float64
 		switch harga.Selected {
 		case "Harga Dus":
-			hargaVal = 100000 // Replace with actual lookup from inventory
+			hargaVal = selectedItem.BoxPrice
 		case "Harga Pack":
-			hargaVal = 10000
+			hargaVal = selectedItem.PackPrice
 		case "Harga Rent":
-			hargaVal = 1000
+			hargaVal = selectedItem.RentPrice
 		}
 
 		// Calculate total
-		qtyVal, _ := strconv.ParseFloat(qty.Text, 64)
+		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Qty harus berupa angka!"), w)
+			return
+		}
+
+		// Check stock availability
+		if qtyVal > selectedItem.Qty {
+			dialog.ShowError(fmt.Errorf("Stok tidak mencukupi! Stok tersedia: %.0f", selectedItem.Qty), w)
+			return
+		}
+		
 		total := qtyVal * hargaVal
 
 		// Add to items list
 		items = append(items, PenjualanItem{
+			ItemID:     selectedItem.ID,
 			KodeBarang: kodeBarang.Text,
 			NamaBarang: namaBarang.Text,
 			Qty:        qty.Text,
@@ -132,6 +167,7 @@ func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
 		qty.SetText("")
 		harga.Selected = ""
 		harga.Refresh()
+		selectedItem = nil
 
 		// Refresh table
 		refreshItemsTable()
@@ -259,18 +295,47 @@ func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
 			return
 		}
 
-		// Save data
-		penjualanData = append(penjualanData, PenjualanFull{
-			Header: PenjualanHeader{
-				TglNota:  tglNota.Text,
-				NoNota:   noNota.Text,
-				Customer: customer.Text,
+		// Parse date
+		sellDate, err := time.Parse("2006-01-02", tglNota.Text)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Format tanggal salah! Gunakan YYYY-MM-DD"), w)
+			return
+		}
+
+		// Build sell model
+		sell := &models.SellFull{
+			Header: models.SellHeader{
+				SellInvoiceNum: noNota.Text,
+				SellDate:       sellDate,
+				CustomerName:   customer.Text,
+				CreatedBy:      &s.User.ID,
 			},
-			Items: items,
-		})
+			Details: make([]models.SellDetail, len(items)),
+		}
+
+		for i, item := range items {
+			qtyVal, _ := strconv.ParseFloat(item.Qty, 64)
+			hargaVal, _ := strconv.ParseFloat(item.Harga, 64)
+			totalVal, _ := strconv.ParseFloat(item.Total, 64)
+
+			sell.Details[i] = models.SellDetail{
+				ItemID:      item.ItemID,
+				Qty:         qtyVal,
+				PriceAmount: hargaVal,
+				TotalAmount: totalVal,
+			}
+		}
+
+		// Save to database
+		err = s.SellRepo.Create(sell)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Gagal menyimpan data: %v", err), w)
+			return
+		}
 
 		dialog.ShowInformation("Success", "Data penjualan berhasil disimpan!", w)
 		d.Hide()
+		
 		if refreshCallback != nil {
 			refreshCallback()
 		}
@@ -309,11 +374,18 @@ func showAddPenjualanDialog(w fyne.Window, refreshCallback func()) {
 	d.Show()
 }
 
-func showViewPenjualanDialog(w fyne.Window, penjualan PenjualanFull) {
+func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID) {
+	// Load full sell data from database
+	sell, err := s.SellRepo.GetByID(headerID)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("Gagal memuat data: %v", err), w)
+		return
+	}
+
 	// Read-only header info
-	tglNota := widget.NewLabel(penjualan.Header.TglNota)
-	noNota := widget.NewLabel(penjualan.Header.NoNota)
-	customer := widget.NewLabel(penjualan.Header.Customer)
+	tglNota := widget.NewLabel(sell.Header.SellDate.Format("2006-01-02"))
+	noNota := widget.NewLabel(sell.Header.SellInvoiceNum)
+	customer := widget.NewLabel(sell.Header.CustomerName)
 
 	headerInfo := container.NewGridWithColumns(2,
 		widget.NewLabel("Tgl. Nota"),
@@ -324,6 +396,9 @@ func showViewPenjualanDialog(w fyne.Window, penjualan PenjualanFull) {
 		customer,
 	)
 
+	// Convert details to display items using helper function
+	displayItems := LoadSellDisplayItems(s, sell.Details)
+
 	// Items table
 	itemHeaders := []string{"Kode Barang", "Nama Barang", "QTY", "Harga", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -331,7 +406,7 @@ func showViewPenjualanDialog(w fyne.Window, penjualan PenjualanFull) {
 
 	itemsTable := widget.NewTable(
 		func() (int, int) {
-			return len(penjualan.Items) + 1, len(itemHeaders)
+			return len(displayItems) + 1, len(itemHeaders)
 		},
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
@@ -360,19 +435,19 @@ func showViewPenjualanDialog(w fyne.Window, penjualan PenjualanFull) {
 			text.TextStyle = fyne.TextStyle{}
 			text.TextSize = 12
 
-			item := penjualan.Items[id.Row-1]
+			item := displayItems[id.Row-1]
 			switch id.Col {
 			case 0:
-				text.Text = item.KodeBarang
+				text.Text = item.Code
 				text.Alignment = fyne.TextAlignLeading
 			case 1:
-				text.Text = item.NamaBarang
+				text.Text = item.Name
 				text.Alignment = fyne.TextAlignLeading
 			case 2:
 				text.Text = item.Qty
 				text.Alignment = fyne.TextAlignCenter
 			case 3:
-				text.Text = item.Harga
+				text.Text = item.Price
 				text.Alignment = fyne.TextAlignTrailing
 			case 4:
 				text.Text = item.Total
@@ -443,12 +518,43 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 	rowBg := color.NRGBA{R: 235, G: 235, B: 235, A: 255}
 
+	var data []PenjualanHeader
 	var selectedRow int = -1
+
+	// Load data from database
+	loadData := func(keyword string) {
+		var headers []models.SellHeader
+		var err error
+		
+		if keyword == "" {
+			headers, err = s.SellRepo.GetAll()
+		} else {
+			headers, err = s.SellRepo.Search(keyword)
+		}
+		
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Gagal memuat data: %v", err), w)
+			return
+		}
+
+		data = make([]PenjualanHeader, len(headers))
+		for i, h := range headers {
+			data[i] = PenjualanHeader{
+				ID:       h.ID,
+				TglNota:  h.SellDate.Format("2006-01-02"),
+				NoNota:   h.SellInvoiceNum,
+				Customer: h.CustomerName,
+			}
+		}
+	}
+
+	// Initial load
+	loadData("")
 
 	// Table
 	table := widget.NewTable(
 		func() (int, int) {
-			return len(penjualanData) + 1, len(headers)
+			return len(data) + 1, len(headers)
 		},
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
@@ -477,17 +583,17 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			text.TextStyle = fyne.TextStyle{}
 			text.TextSize = 13
 
-			if id.Row-1 < len(penjualanData) {
-				item := penjualanData[id.Row-1]
+			if id.Row-1 < len(data) {
+				item := data[id.Row-1]
 				switch id.Col {
 				case 0:
-					text.Text = item.Header.TglNota
+					text.Text = item.TglNota
 					text.Alignment = fyne.TextAlignCenter
 				case 1:
-					text.Text = item.Header.NoNota
+					text.Text = item.NoNota
 					text.Alignment = fyne.TextAlignCenter
 				case 2:
-					text.Text = item.Header.Customer
+					text.Text = item.Customer
 					text.Alignment = fyne.TextAlignLeading
 				}
 			}
@@ -504,6 +610,12 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		if id.Row > 0 {
 			selectedRow = id.Row - 1
 		}
+	}
+
+	// Search functionality
+	search.OnChanged = func(keyword string) {
+		loadData(keyword)
+		table.Refresh()
 	}
 
 	// Footer
@@ -527,6 +639,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Refresh function
 	refreshTable := func() {
+		loadData(search.Text)
 		table.Refresh()
 	}
 
@@ -534,10 +647,10 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
 		switch k.Name {
 		case fyne.KeyInsert:
-			showAddPenjualanDialog(w, refreshTable)
+			showAddPenjualanDialog(w, s, refreshTable)
 		case fyne.KeyV:
-			if selectedRow >= 0 && selectedRow < len(penjualanData) {
-				showViewPenjualanDialog(w, penjualanData[selectedRow])
+			if selectedRow >= 0 && selectedRow < len(data) {
+				showViewPenjualanDialog(w, s, data[selectedRow].ID)
 			} else {
 				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
 			}

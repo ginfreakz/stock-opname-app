@@ -1,18 +1,24 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"fyne.io/fyne/v2/dialog"
+	
+	"fyne-app/internal/models"
 	"fyne-app/internal/state"
+	"github.com/google/uuid"
 )
 
 type InventoryItem struct {
+	ID        uuid.UUID
 	Code      string
 	Name      string
 	Qty       string
@@ -21,7 +27,7 @@ type InventoryItem struct {
 	HargaRent string
 }
 
-func showAddInventoryDialog(w fyne.Window) {
+func showAddInventoryDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 
 	kode := widget.NewEntry()
 	nama := widget.NewEntry()
@@ -54,11 +60,62 @@ func showAddInventoryDialog(w fyne.Window) {
 
 	// Create custom buttons with specific colors
 	submitBtn := widget.NewButton("Submit", func() {
-		// TODO:
-		// - validate input
-		// - append to data
-		// - refresh table
+		// Validate input
+		if kode.Text == "" || nama.Text == "" || qty.Text == "" || 
+		   hargaDus.Text == "" || hargaPack.Text == "" || hargaRent.Text == "" {
+			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
+			return
+		}
+
+		// Parse values
+		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Qty harus berupa angka!"), w)
+			return
+		}
+
+		hargaDusVal, err := strconv.ParseFloat(hargaDus.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Dus harus berupa angka!"), w)
+			return
+		}
+
+		hargaPackVal, err := strconv.ParseFloat(hargaPack.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Pack harus berupa angka!"), w)
+			return
+		}
+
+		hargaRentVal, err := strconv.ParseFloat(hargaRent.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Rent harus berupa angka!"), w)
+			return
+		}
+
+		// Create item model
+		item := &models.Item{
+			Code:      kode.Text,
+			Name:      nama.Text,
+			Qty:       qtyVal,
+			BoxPrice:  hargaDusVal,
+			PackPrice: hargaPackVal,
+			RentPrice: hargaRentVal,
+			CreatedBy: &s.User.ID,
+		}
+
+		// Save to database
+		err = s.ItemRepo.Create(item)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Gagal menyimpan data: %v", err), w)
+			return
+		}
+
+		dialog.ShowInformation("Success", "Data berhasil disimpan!", w)
 		d.Hide()
+		
+		if refreshCallback != nil {
+			refreshCallback()
+		}
 	})
 
 	submitBtn.Importance = widget.HighImportance
@@ -100,14 +157,26 @@ func showAddInventoryDialog(w fyne.Window) {
 	d.Show()
 }
 
-func showEditInventoryDialog(w fyne.Window) {
+func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem, refreshCallback func()) {
 
 	kode := widget.NewEntry()
+	kode.SetText(item.Code)
+	kode.Disable() // Code should not be editable
+	
 	nama := widget.NewEntry()
+	nama.SetText(item.Name)
+	
 	qty := widget.NewEntry()
+	qty.SetText(item.Qty)
+	
 	hargaDus := widget.NewEntry()
+	hargaDus.SetText(item.HargaDus)
+	
 	hargaPack := widget.NewEntry()
+	hargaPack.SetText(item.HargaPack)
+	
 	hargaRent := widget.NewEntry()
+	hargaRent.SetText(item.HargaRent)
 
 	form := widget.NewForm(
 		widget.NewFormItem("Kode", kode),
@@ -133,11 +202,63 @@ func showEditInventoryDialog(w fyne.Window) {
 
 	// Create custom buttons with specific colors
 	submitBtn := widget.NewButton("Submit", func() {
-		// TODO:
-		// - validate input
-		// - append to data
-		// - refresh table
+		// Validate input
+		if nama.Text == "" || qty.Text == "" || 
+		   hargaDus.Text == "" || hargaPack.Text == "" || hargaRent.Text == "" {
+			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
+			return
+		}
+
+		// Parse values
+		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Qty harus berupa angka!"), w)
+			return
+		}
+
+		hargaDusVal, err := strconv.ParseFloat(hargaDus.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Dus harus berupa angka!"), w)
+			return
+		}
+
+		hargaPackVal, err := strconv.ParseFloat(hargaPack.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Pack harus berupa angka!"), w)
+			return
+		}
+
+		hargaRentVal, err := strconv.ParseFloat(hargaRent.Text, 64)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Harga Rent harus berupa angka!"), w)
+			return
+		}
+
+		// Update item model
+		updatedItem := &models.Item{
+			ID:        item.ID,
+			Code:      item.Code,
+			Name:      nama.Text,
+			Qty:       qtyVal,
+			BoxPrice:  hargaDusVal,
+			PackPrice: hargaPackVal,
+			RentPrice: hargaRentVal,
+			UpdatedBy: &s.User.ID,
+		}
+
+		// Update in database
+		err = s.ItemRepo.Update(updatedItem)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Gagal mengupdate data: %v", err), w)
+			return
+		}
+
+		dialog.ShowInformation("Success", "Data berhasil diupdate!", w)
 		d.Hide()
+		
+		if refreshCallback != nil {
+			refreshCallback()
+		}
 	})
 
 	submitBtn.Importance = widget.HighImportance
@@ -217,11 +338,41 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		"Harga Rent",
 	}
 
-	data := []InventoryItem{
-		{"BRG001", "Indomie Goreng", "120", "120.000", "10.000", "1.200"},
-		{"BRG002", "Aqua 600ml", "80", "90.000", "7.500", "900"},
-		{"BRG003", "Kopi Sachet", "200", "60.000", "5.000", "600"},
+	var data []InventoryItem
+	var selectedRow int = -1
+
+	// Load data from database
+	loadData := func(keyword string) {
+		var items []models.Item
+		var err error
+		
+		if keyword == "" {
+			items, err = s.ItemRepo.GetAll()
+		} else {
+			items, err = s.ItemRepo.Search(keyword)
+		}
+		
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Gagal memuat data: %v", err), w)
+			return
+		}
+
+		data = make([]InventoryItem, len(items))
+		for i, item := range items {
+			data[i] = InventoryItem{
+				ID:        item.ID,
+				Code:      item.Code,
+				Name:      item.Name,
+				Qty:       fmt.Sprintf("%.0f", item.Qty),
+				HargaDus:  fmt.Sprintf("%.0f", item.BoxPrice),
+				HargaPack: fmt.Sprintf("%.0f", item.PackPrice),
+				HargaRent: fmt.Sprintf("%.0f", item.RentPrice),
+			}
+		}
 	}
+
+	// Initial load
+	loadData("")
 
 	// ===== COLORS =====
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -259,31 +410,40 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			text.TextStyle = fyne.TextStyle{}
 			text.TextSize = 13
 
-			item := data[id.Row-1]
-			switch id.Col {
-			case 0:
-				text.Text = item.Code
-				text.Alignment = fyne.TextAlignLeading
-			case 1:
-				text.Text = item.Name
-				text.Alignment = fyne.TextAlignLeading
-			case 2:
-				text.Text = item.Qty
-				text.Alignment = fyne.TextAlignCenter
-			case 3:
-				text.Text = item.HargaDus
-				text.Alignment = fyne.TextAlignTrailing
-			case 4:
-				text.Text = item.HargaPack
-				text.Alignment = fyne.TextAlignTrailing
-			case 5:
-				text.Text = item.HargaRent
-				text.Alignment = fyne.TextAlignTrailing
+			if id.Row-1 < len(data) {
+				item := data[id.Row-1]
+				switch id.Col {
+				case 0:
+					text.Text = item.Code
+					text.Alignment = fyne.TextAlignLeading
+				case 1:
+					text.Text = item.Name
+					text.Alignment = fyne.TextAlignLeading
+				case 2:
+					text.Text = item.Qty
+					text.Alignment = fyne.TextAlignCenter
+				case 3:
+					text.Text = item.HargaDus
+					text.Alignment = fyne.TextAlignTrailing
+				case 4:
+					text.Text = item.HargaPack
+					text.Alignment = fyne.TextAlignTrailing
+				case 5:
+					text.Text = item.HargaRent
+					text.Alignment = fyne.TextAlignTrailing
+				}
 			}
 
 			text.Refresh()
 		},
 	)
+
+	// Table selection
+	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row > 0 {
+			selectedRow = id.Row - 1
+		}
+	}
 
 	// ===== COLUMN WIDTH (FIXED & BALANCED) =====
 	table.SetColumnWidth(0, 110)
@@ -292,6 +452,18 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(3, 126)
 	table.SetColumnWidth(4, 126)
 	table.SetColumnWidth(5, 126)
+
+	// Search functionality
+	search.OnChanged = func(keyword string) {
+		loadData(keyword)
+		table.Refresh()
+	}
+
+	// Refresh callback
+	refreshTable := func() {
+		loadData(search.Text)
+		table.Refresh()
+	}
 
 	// ===== FOOTER =====
 	footer := widget.NewLabelWithStyle(
@@ -319,13 +491,36 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	card := widget.NewCard("", "", content)
 
-	// Single call handles both keys
+	// Keyboard shortcuts
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
 		switch k.Name {
 		case fyne.KeyInsert:
-			showAddInventoryDialog(w)
+			showAddInventoryDialog(w, s, refreshTable)
 		case fyne.KeyE:
-			showEditInventoryDialog(w)
+			if selectedRow >= 0 && selectedRow < len(data) {
+				showEditInventoryDialog(w, s, data[selectedRow], refreshTable)
+			} else {
+				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+			}
+		case fyne.KeyDelete:
+			if selectedRow >= 0 && selectedRow < len(data) {
+				selectedItem := data[selectedRow]
+				dialog.ShowConfirm("Konfirmasi", 
+					fmt.Sprintf("Apakah Anda yakin ingin menghapus '%s'?", selectedItem.Name),
+					func(confirmed bool) {
+						if confirmed {
+							err := s.ItemRepo.Delete(selectedItem.ID, s.User.ID)
+							if err != nil {
+								dialog.ShowError(fmt.Errorf("Gagal menghapus data: %v", err), w)
+								return
+							}
+							dialog.ShowInformation("Success", "Data berhasil dihapus!", w)
+							refreshTable()
+						}
+					}, w)
+			} else {
+				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+			}
 		}
 	})
 
