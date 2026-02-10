@@ -79,11 +79,11 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 	qty := widget.NewEntry()
 	
 	// Harga dropdown (combo select with arrow)
-	hargaOptions := []string{"Harga Dus", "Harga Pack", "Harga Rent"}
-	harga := widget.NewSelect(hargaOptions, func(value string) {
-		// Handle selection
-	})
-	harga.PlaceHolder = "Pilih Harga"
+	// hargaOptions := []string{"Harga Dus", "Harga Pack", "Harga Rent"}
+	// harga := widget.NewSelect(hargaOptions, func(value string) {
+	// 	// Handle selection
+	// })
+	// harga.PlaceHolder = "Pilih Harga"
 
 	// Store selected item for validation
 	var selectedItem *models.Item
@@ -120,21 +120,13 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 	// Add item button
 	addItemBtn := widget.NewButton("Add", func() {
 		// Validate inputs
-		if kodeBarang.Text == "" || selectedItem == nil || qty.Text == "" || harga.Selected == "" {
-			dialog.ShowInformation("Error", "Semua field item harus diisi dan kode barang harus valid!", w)
+		if kodeBarang.Text == "" || selectedItem == nil || qty.Text == "" {
+			dialog.ShowInformation("Error", "Kode barang dan qty harus diisi dan kode barang harus valid!", w)
 			return
 		}
 
-		// Get price based on selection
-		var hargaVal float64
-		switch harga.Selected {
-		case "Harga Dus":
-			hargaVal = selectedItem.BoxPrice
-		case "Harga Pack":
-			hargaVal = selectedItem.PackPrice
-		case "Harga Rent":
-			hargaVal = selectedItem.RentPrice
-		}
+		// Get price from selected item
+		hargaVal := selectedItem.Price
 
 		// Calculate total
 		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
@@ -165,8 +157,6 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		kodeBarang.SetText("")
 		namaBarang.SetText("")
 		qty.SetText("")
-		harga.Selected = ""
-		harga.Refresh()
 		selectedItem = nil
 
 		// Refresh table
@@ -188,8 +178,6 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		namaBarang,
 		widget.NewLabel("Qty"),
 		qty,
-		widget.NewLabel("Harga"),
-		harga,
 	)
 
 	// Items table

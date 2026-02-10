@@ -18,7 +18,7 @@ func NewItemRepository(db *sqlx.DB) *ItemRepository {
 
 func (r *ItemRepository) GetAll() ([]models.Item, error) {
 	var items []models.Item
-	query := `SELECT id, code, name, qty, box_price, pack_price, rent_price, 
+	query := `SELECT id, code, name, qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE deleted_at IS NULL 
@@ -30,7 +30,7 @@ func (r *ItemRepository) GetAll() ([]models.Item, error) {
 
 func (r *ItemRepository) GetByID(id uuid.UUID) (*models.Item, error) {
 	var item models.Item
-	query := `SELECT id, code, name, qty, box_price, pack_price, rent_price, 
+	query := `SELECT id, code, name, qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE id = $1 AND deleted_at IS NULL`
@@ -45,7 +45,7 @@ func (r *ItemRepository) GetByID(id uuid.UUID) (*models.Item, error) {
 
 func (r *ItemRepository) GetByCode(code string) (*models.Item, error) {
 	var item models.Item
-	query := `SELECT id, code, name, qty, box_price, pack_price, rent_price, 
+	query := `SELECT id, code, name, qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE code = $1 AND deleted_at IS NULL`
@@ -62,11 +62,11 @@ func (r *ItemRepository) Create(item *models.Item) error {
 	item.ID = uuid.New()
 	item.CreatedAt = time.Now()
 	
-	query := `INSERT INTO items (id, code, name, qty, box_price, pack_price, rent_price, created_at, created_by) 
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	query := `INSERT INTO items (id, code, name, qty, price, created_at, created_by) 
+			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	
 	_, err := r.db.Exec(query, item.ID, item.Code, item.Name, item.Qty, 
-		item.BoxPrice, item.PackPrice, item.RentPrice, item.CreatedAt, item.CreatedBy)
+		item.Price, item.CreatedAt, item.CreatedBy)
 	return err
 }
 
@@ -75,12 +75,12 @@ func (r *ItemRepository) Update(item *models.Item) error {
 	item.UpdatedAt = &now
 	
 	query := `UPDATE items 
-			  SET name = $1, qty = $2, box_price = $3, pack_price = $4, 
-			      rent_price = $5, updated_at = $6, updated_by = $7 
-			  WHERE id = $8`
+			  SET name = $1, qty = $2, price = $3, 
+			      updated_at = $4, updated_by = $5 
+			  WHERE id = $6`
 	
-	_, err := r.db.Exec(query, item.Name, item.Qty, item.BoxPrice, 
-		item.PackPrice, item.RentPrice, item.UpdatedAt, item.UpdatedBy, item.ID)
+	_, err := r.db.Exec(query, item.Name, item.Qty, item.Price, 
+		item.UpdatedAt, item.UpdatedBy, item.ID)
 	return err
 }
 
@@ -96,7 +96,7 @@ func (r *ItemRepository) Delete(id uuid.UUID, deletedBy uuid.UUID) error {
 
 func (r *ItemRepository) Search(keyword string) ([]models.Item, error) {
 	var items []models.Item
-	query := `SELECT id, code, name, qty, box_price, pack_price, rent_price, 
+	query := `SELECT id, code, name, qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE deleted_at IS NULL 

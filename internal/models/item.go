@@ -10,9 +10,7 @@ type Item struct {
 	Code       string     `db:"code"`
 	Name       string     `db:"name"`
 	Qty        float64    `db:"qty"`
-	BoxPrice   float64    `db:"box_price"`
-	PackPrice  float64    `db:"pack_price"`
-	RentPrice  float64    `db:"rent_price"`
+	Price      float64    `db:"price"`
 	CreatedAt  time.Time  `db:"created_at"`
 	UpdatedAt  *time.Time `db:"updated_at"`
 	DeletedAt  *time.Time `db:"deleted_at"`

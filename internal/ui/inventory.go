@@ -4,299 +4,237 @@ import (
 	"fmt"
 	"image/color"
 	"strconv"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	
+
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
 	"github.com/google/uuid"
 )
 
 type InventoryItem struct {
-	ID        uuid.UUID
-	Code      string
-	Name      string
-	Qty       string
-	HargaDus  string
-	HargaPack string
-	HargaRent string
+	ID    uuid.UUID
+	Code  string
+	Name  string
+	Qty   string
+	Price string
 }
 
-func showAddInventoryDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
+// focusableTable wraps a Table and intercepts key events so keyboard shortcuts
+// work even after clicking inside the table.
+type focusableTable struct {
+	widget.BaseWidget
+	table      *widget.Table
+	onTypedKey func(*fyne.KeyEvent)
+	focused    bool
+}
+
+func newFocusableTable(table *widget.Table, onTypedKey func(*fyne.KeyEvent)) *focusableTable {
+	ft := &focusableTable{
+		table:      table,
+		onTypedKey: onTypedKey,
+	}
+	ft.ExtendBaseWidget(ft)
+	return ft
+}
+
+func (ft *focusableTable) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(ft.table)
+}
+
+func (ft *focusableTable) FocusGained() { ft.focused = true }
+func (ft *focusableTable) FocusLost()   { ft.focused = false }
+func (ft *focusableTable) TypedRune(r rune) {}
+
+func (ft *focusableTable) TypedKey(ev *fyne.KeyEvent) {
+	if ft.onTypedKey != nil {
+		ft.onTypedKey(ev)
+	}
+}
+
+func (ft *focusableTable) KeyDown(ev *fyne.KeyEvent) {}
+func (ft *focusableTable) KeyUp(ev *fyne.KeyEvent)   {}
+
+var _ fyne.Focusable = (*focusableTable)(nil)
+var _ desktop.Keyable = (*focusableTable)(nil)
+
+func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, refreshCallback func()) {
 
 	kode := widget.NewEntry()
 	nama := widget.NewEntry()
 	qty := widget.NewEntry()
-	hargaDus := widget.NewEntry()
-	hargaPack := widget.NewEntry()
-	hargaRent := widget.NewEntry()
+	price := widget.NewEntry()
 
 	form := widget.NewForm(
 		widget.NewFormItem("Kode", kode),
 		widget.NewFormItem("Nama", nama),
 		widget.NewFormItem("Qty", qty),
-		widget.NewFormItem("Harga Dus", hargaDus),
-		widget.NewFormItem("Harga Pack", hargaPack),
-		widget.NewFormItem("Harga Rent", hargaRent),
+		widget.NewFormItem("Harga", price),
 	)
 
-	// WHITE BACKGROUND FOR DIALOG
 	bg := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-
 	content := container.NewPadded(form)
+	formContent := container.NewMax(bg, content)
 
-	formContent := container.NewMax(
-		bg,
-		content,
-	)
-
-	// Create the dialog first (will set buttons later)
 	var d dialog.Dialog
 
-	// Create custom buttons with specific colors
 	submitBtn := widget.NewButton("Submit", func() {
-		// Validate input
-		if kode.Text == "" || nama.Text == "" || qty.Text == "" || 
-		   hargaDus.Text == "" || hargaPack.Text == "" || hargaRent.Text == "" {
+		if kode.Text == "" || nama.Text == "" || qty.Text == "" || price.Text == "" {
 			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
 			return
 		}
 
-		// Parse values
 		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Qty harus berupa angka!"), w)
 			return
 		}
 
-		hargaDusVal, err := strconv.ParseFloat(hargaDus.Text, 64)
+		priceVal, err := strconv.ParseFloat(price.Text, 64)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Dus harus berupa angka!"), w)
+			dialog.ShowError(fmt.Errorf("Harga harus berupa angka!"), w)
 			return
 		}
 
-		hargaPackVal, err := strconv.ParseFloat(hargaPack.Text, 64)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Pack harus berupa angka!"), w)
-			return
-		}
-
-		hargaRentVal, err := strconv.ParseFloat(hargaRent.Text, 64)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Rent harus berupa angka!"), w)
-			return
-		}
-
-		// Create item model
 		item := &models.Item{
 			Code:      kode.Text,
 			Name:      nama.Text,
 			Qty:       qtyVal,
-			BoxPrice:  hargaDusVal,
-			PackPrice: hargaPackVal,
-			RentPrice: hargaRentVal,
+			Price:     priceVal,
 			CreatedBy: &s.User.ID,
 		}
 
-		// Save to database
 		err = s.ItemRepo.Create(item)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal menyimpan data: %v", err), w)
 			return
 		}
 
-		dialog.ShowInformation("Success", "Data berhasil disimpan!", w)
 		d.Hide()
-		
+		*dialogOpen = false
+
+		dialog.ShowInformation("Success", "Data berhasil disimpan!", w)
+
 		if refreshCallback != nil {
 			refreshCallback()
 		}
 	})
-
 	submitBtn.Importance = widget.HighImportance
 
 	cancelBtn := widget.NewButton("Cancel", func() {
 		d.Hide()
+		*dialogOpen = false
 	})
-	
-	// Make cancel button red
 	cancelBtn.Importance = widget.DangerImportance
 
-	// Create button container
 	buttons := container.NewGridWithColumns(2, cancelBtn, submitBtn)
-	
-	// Combine form content with buttons
-	finalContent := container.NewBorder(
-		nil,      // top
-		buttons,  // bottom
-		nil,      // left
-		nil,      // right
-		formContent, // center
-	)
+	finalContent := container.NewBorder(nil, buttons, nil, nil, formContent)
 
-	// Add background to entire dialog content
 	dialogContent := container.NewMax(
 		canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255}),
 		container.NewPadded(finalContent),
 	)
 
-	// Create the dialog with custom content
-	d = dialog.NewCustom(
-		"Add new data",
-		"",  // Empty dismiss label since we have custom buttons
-		dialogContent,
-		w,
-	)
-
-	d.Resize(fyne.NewSize(420, 400))
+	d = dialog.NewCustom("Add new data", "", dialogContent, w)
+	d.Resize(fyne.NewSize(420, 320))
 	d.Show()
 }
 
-func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem, refreshCallback func()) {
+func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem, dialogOpen *bool, refreshCallback func()) {
 
 	kode := widget.NewEntry()
 	kode.SetText(item.Code)
-	kode.Disable() // Code should not be editable
-	
+	kode.Disable()
+
 	nama := widget.NewEntry()
 	nama.SetText(item.Name)
-	
+
 	qty := widget.NewEntry()
 	qty.SetText(item.Qty)
-	
-	hargaDus := widget.NewEntry()
-	hargaDus.SetText(item.HargaDus)
-	
-	hargaPack := widget.NewEntry()
-	hargaPack.SetText(item.HargaPack)
-	
-	hargaRent := widget.NewEntry()
-	hargaRent.SetText(item.HargaRent)
+
+	price := widget.NewEntry()
+	price.SetText(item.Price)
 
 	form := widget.NewForm(
 		widget.NewFormItem("Kode", kode),
 		widget.NewFormItem("Nama", nama),
 		widget.NewFormItem("Qty", qty),
-		widget.NewFormItem("Harga Dus", hargaDus),
-		widget.NewFormItem("Harga Pack", hargaPack),
-		widget.NewFormItem("Harga Rent", hargaRent),
+		widget.NewFormItem("Harga", price),
 	)
 
-	// WHITE BACKGROUND FOR DIALOG
 	bg := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-
 	content := container.NewPadded(form)
+	formContent := container.NewMax(bg, content)
 
-	formContent := container.NewMax(
-		bg,
-		content,
-	)
-
-	// Create the dialog first (will set buttons later)
 	var d dialog.Dialog
 
-	// Create custom buttons with specific colors
 	submitBtn := widget.NewButton("Submit", func() {
-		// Validate input
-		if nama.Text == "" || qty.Text == "" || 
-		   hargaDus.Text == "" || hargaPack.Text == "" || hargaRent.Text == "" {
+		if nama.Text == "" || qty.Text == "" || price.Text == "" {
 			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
 			return
 		}
 
-		// Parse values
 		qtyVal, err := strconv.ParseFloat(qty.Text, 64)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Qty harus berupa angka!"), w)
 			return
 		}
 
-		hargaDusVal, err := strconv.ParseFloat(hargaDus.Text, 64)
+		priceVal, err := strconv.ParseFloat(price.Text, 64)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Dus harus berupa angka!"), w)
+			dialog.ShowError(fmt.Errorf("Harga harus berupa angka!"), w)
 			return
 		}
 
-		hargaPackVal, err := strconv.ParseFloat(hargaPack.Text, 64)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Pack harus berupa angka!"), w)
-			return
-		}
-
-		hargaRentVal, err := strconv.ParseFloat(hargaRent.Text, 64)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Harga Rent harus berupa angka!"), w)
-			return
-		}
-
-		// Update item model
 		updatedItem := &models.Item{
 			ID:        item.ID,
 			Code:      item.Code,
 			Name:      nama.Text,
 			Qty:       qtyVal,
-			BoxPrice:  hargaDusVal,
-			PackPrice: hargaPackVal,
-			RentPrice: hargaRentVal,
+			Price:     priceVal,
 			UpdatedBy: &s.User.ID,
 		}
 
-		// Update in database
 		err = s.ItemRepo.Update(updatedItem)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal mengupdate data: %v", err), w)
 			return
 		}
 
-		dialog.ShowInformation("Success", "Data berhasil diupdate!", w)
 		d.Hide()
-		
+		*dialogOpen = false
+
+		dialog.ShowInformation("Success", "Data berhasil diupdate!", w)
+
 		if refreshCallback != nil {
 			refreshCallback()
 		}
 	})
-
 	submitBtn.Importance = widget.HighImportance
-	
+
 	cancelBtn := widget.NewButton("Cancel", func() {
 		d.Hide()
+		*dialogOpen = false
 	})
-	
-	// Make cancel button red
 	cancelBtn.Importance = widget.DangerImportance
 
-	// Create button container
 	buttons := container.NewGridWithColumns(2, cancelBtn, submitBtn)
-	
-	// Combine form content with buttons
-	finalContent := container.NewBorder(
-		nil,      // top
-		buttons,  // bottom
-		nil,      // left
-		nil,      // right
-		formContent, // center
-	)
+	finalContent := container.NewBorder(nil, buttons, nil, nil, formContent)
 
-	// Add background to entire dialog content
 	dialogContent := container.NewMax(
 		canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255}),
 		container.NewPadded(finalContent),
 	)
 
-	// Create the dialog with custom content
-	d = dialog.NewCustom(
-		"Edit data",
-		"",  // Empty dismiss label since we have custom buttons
-		dialogContent,
-		w,
-	)
-
-	d.Resize(fyne.NewSize(420, 400))
+	d = dialog.NewCustom("Edit data", "", dialogContent, w)
+	d.Resize(fyne.NewSize(420, 320))
 	d.Show()
 }
 
@@ -333,25 +271,24 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		"Kode Barang",
 		"Nama Barang",
 		"QTY",
-		"Harga Dus",
-		"Harga Pack",
-		"Harga Rent",
+		"Harga",
 	}
 
 	var data []InventoryItem
 	var selectedRow int = -1
 
-	// Load data from database
+	dialogOpen := false
+
 	loadData := func(keyword string) {
 		var items []models.Item
 		var err error
-		
+
 		if keyword == "" {
 			items, err = s.ItemRepo.GetAll()
 		} else {
 			items, err = s.ItemRepo.Search(keyword)
 		}
-		
+
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal memuat data: %v", err), w)
 			return
@@ -360,23 +297,21 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		data = make([]InventoryItem, len(items))
 		for i, item := range items {
 			data[i] = InventoryItem{
-				ID:        item.ID,
-				Code:      item.Code,
-				Name:      item.Name,
-				Qty:       fmt.Sprintf("%.0f", item.Qty),
-				HargaDus:  fmt.Sprintf("%.0f", item.BoxPrice),
-				HargaPack: fmt.Sprintf("%.0f", item.PackPrice),
-				HargaRent: fmt.Sprintf("%.0f", item.RentPrice),
+				ID:    item.ID,
+				Code:  item.Code,
+				Name:  item.Name,
+				Qty:   fmt.Sprintf("%.0f", item.Qty),
+				Price: fmt.Sprintf("%.0f", item.Price),
 			}
 		}
 	}
 
-	// Initial load
 	loadData("")
 
 	// ===== COLORS =====
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 	rowBg := color.NRGBA{R: 235, G: 235, B: 235, A: 255}
+	selectedBg := color.NRGBA{R: 100, G: 150, B: 255, A: 255}
 
 	// ===== TABLE =====
 	table := widget.NewTable(
@@ -384,18 +319,18 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			return len(data) + 1, len(headers)
 		},
 		func() fyne.CanvasObject {
-			bg := canvas.NewRectangle(color.Transparent)
+			cellBg := canvas.NewRectangle(color.Transparent)
 			text := canvas.NewText("", color.Black)
 			text.TextSize = 13
-			return container.NewMax(bg, text)
+			return container.NewMax(cellBg, text)
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			objects := cell.(*fyne.Container).Objects
-			bg := objects[0].(*canvas.Rectangle)
+			cellBg := objects[0].(*canvas.Rectangle)
 			text := objects[1].(*canvas.Text)
 
 			if id.Row == 0 {
-				bg.FillColor = headerBg
+				cellBg.FillColor = headerBg
 				text.Text = headers[id.Col]
 				text.Color = color.White
 				text.TextSize = 14
@@ -405,8 +340,14 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				return
 			}
 
-			bg.FillColor = rowBg
-			text.Color = color.Black
+			if id.Row-1 == selectedRow {
+				cellBg.FillColor = selectedBg
+				text.Color = color.White
+			} else {
+				cellBg.FillColor = rowBg
+				text.Color = color.Black
+			}
+
 			text.TextStyle = fyne.TextStyle{}
 			text.TextSize = 13
 
@@ -423,13 +364,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					text.Text = item.Qty
 					text.Alignment = fyne.TextAlignCenter
 				case 3:
-					text.Text = item.HargaDus
-					text.Alignment = fyne.TextAlignTrailing
-				case 4:
-					text.Text = item.HargaPack
-					text.Alignment = fyne.TextAlignTrailing
-				case 5:
-					text.Text = item.HargaRent
+					text.Text = item.Price
 					text.Alignment = fyne.TextAlignTrailing
 				}
 			}
@@ -438,36 +373,163 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		},
 	)
 
-	// Table selection
-	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row > 0 {
-			selectedRow = id.Row - 1
+	var focusWrapper *focusableTable
+
+	safeFocus := func() {
+		if focusWrapper == nil {
+			return
+		}
+		if focusWrapper.Size().Width > 0 && focusWrapper.Size().Height > 0 {
+			w.Canvas().Focus(focusWrapper)
 		}
 	}
 
-	// ===== COLUMN WIDTH (FIXED & BALANCED) =====
-	table.SetColumnWidth(0, 110)
-	table.SetColumnWidth(1, 200)
-	table.SetColumnWidth(2, 70)
-	table.SetColumnWidth(3, 126)
-	table.SetColumnWidth(4, 126)
-	table.SetColumnWidth(5, 126)
+	refreshTable := func() {
+		selectedRow = -1
+		loadData(search.Text)
+		table.Refresh()
+		safeFocus()
+	}
+
+	// Table selection — single click only
+	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row > 0 && id.Row-1 < len(data) {
+			selectedRow = id.Row - 1
+			table.Refresh()
+
+			// Reclaim focus from the inner table using fyne.Do for thread safety
+			time.AfterFunc(50*time.Millisecond, func() {
+				fyne.Do(func() {
+					safeFocus()
+				})
+			})
+		}
+	}
+
+	// ===== COLUMN WIDTH =====
+	table.SetColumnWidth(0, 150)
+	table.SetColumnWidth(1, 350)
+	table.SetColumnWidth(2, 120)
+	table.SetColumnWidth(3, 160)
 
 	// Search functionality
 	search.OnChanged = func(keyword string) {
+		selectedRow = -1
 		loadData(keyword)
 		table.Refresh()
 	}
 
-	// Refresh callback
-	refreshTable := func() {
-		loadData(search.Text)
-		table.Refresh()
+	// ===== KEY HANDLER =====
+	handleKey := func(k *fyne.KeyEvent) {
+		if dialogOpen {
+			return
+		}
+
+		switch k.Name {
+		case fyne.KeyInsert:
+			dialogOpen = true
+			showAddInventoryDialog(w, s, &dialogOpen, refreshTable)
+		case fyne.KeyE:
+			if selectedRow >= 0 && selectedRow < len(data) {
+				dialogOpen = true
+				showEditInventoryDialog(w, s, data[selectedRow], &dialogOpen, refreshTable)
+			} else {
+				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+			}
+		case fyne.KeyDelete:
+			if selectedRow >= 0 && selectedRow < len(data) {
+				dialogOpen = true
+				selectedItem := data[selectedRow]
+				dialog.ShowConfirm("Konfirmasi",
+					fmt.Sprintf("Apakah Anda yakin ingin menghapus '%s'?", selectedItem.Name),
+					func(confirmed bool) {
+						if confirmed {
+							err := s.ItemRepo.Delete(selectedItem.ID, s.User.ID)
+							if err != nil {
+								dialogOpen = false
+								dialog.ShowError(fmt.Errorf("Gagal menghapus data: %v", err), w)
+								return
+							}
+							dialogOpen = false
+							dialog.ShowInformation("Success", "Data berhasil dihapus!", w)
+							refreshTable()
+						} else {
+							dialogOpen = false
+						}
+					}, w)
+			} else {
+				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+			}
+		case fyne.KeyUp:
+			if len(data) > 0 {
+				if selectedRow > 0 {
+					selectedRow--
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyDown:
+			if len(data) > 0 {
+				if selectedRow < len(data)-1 {
+					selectedRow++
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyHome:
+			if len(data) > 0 {
+				selectedRow = 0
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: 1, Col: 0})
+			}
+		case fyne.KeyEnd:
+			if len(data) > 0 {
+				selectedRow = len(data) - 1
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageUp:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow -= 10
+					if selectedRow < 0 {
+						selectedRow = 0
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageDown:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow += 10
+					if selectedRow >= len(data) {
+						selectedRow = len(data) - 1
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		}
 	}
+
+	// ===== FOCUSABLE WRAPPER =====
+	focusWrapper = newFocusableTable(table, handleKey)
+
+	// Canvas-level fallback
+	w.Canvas().SetOnTypedKey(handleKey)
 
 	// ===== FOOTER =====
 	footer := widget.NewLabelWithStyle(
-		"Insert = input data   |   E = Edit data   |   Del = Delete data",
+		"Insert = input data   |   E = Edit data   |   Del = Delete data   |   ↑↓ = Navigate",
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Italic: true},
 	)
@@ -475,8 +537,8 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// ===== CENTERED TABLE WRAPPER =====
 	tableWrapper := container.NewCenter(
 		container.NewGridWrap(
-			fyne.NewSize(780, 400),
-			table,
+			fyne.NewSize(800, 400),
+			focusWrapper,
 		),
 	)
 
@@ -491,37 +553,11 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	card := widget.NewCard("", "", content)
 
-	// Keyboard shortcuts
-	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
-		switch k.Name {
-		case fyne.KeyInsert:
-			showAddInventoryDialog(w, s, refreshTable)
-		case fyne.KeyE:
-			if selectedRow >= 0 && selectedRow < len(data) {
-				showEditInventoryDialog(w, s, data[selectedRow], refreshTable)
-			} else {
-				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
-			}
-		case fyne.KeyDelete:
-			if selectedRow >= 0 && selectedRow < len(data) {
-				selectedItem := data[selectedRow]
-				dialog.ShowConfirm("Konfirmasi", 
-					fmt.Sprintf("Apakah Anda yakin ingin menghapus '%s'?", selectedItem.Name),
-					func(confirmed bool) {
-						if confirmed {
-							err := s.ItemRepo.Delete(selectedItem.ID, s.User.ID)
-							if err != nil {
-								dialog.ShowError(fmt.Errorf("Gagal menghapus data: %v", err), w)
-								return
-							}
-							dialog.ShowInformation("Success", "Data berhasil dihapus!", w)
-							refreshTable()
-						}
-					}, w)
-			} else {
-				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
-			}
-		}
+	// Defer initial focus until widget is on canvas (fyne.Do for thread safety)
+	time.AfterFunc(150*time.Millisecond, func() {
+		fyne.Do(func() {
+			safeFocus()
+		})
 	})
 
 	return container.NewMax(
