@@ -77,6 +77,7 @@ CREATE TABLE public.purchase_headers (
   CONSTRAINT purchase_headers_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL,
   CONSTRAINT purchase_headers_updated_by_foreign FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL
 );
+ALTER TABLE purchase_headers ADD COLUMN total_amount float DEFAULT 0 NOT NULL;
 
 -- # Table: purchase_details
 -- DROP TABLE public.purchase_details;
@@ -109,6 +110,7 @@ CREATE TABLE public.sell_headers (
   CONSTRAINT sell_headers_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL,
   CONSTRAINT sell_headers_updated_by_foreign FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL
 );
+ALTER TABLE sell_headers ADD COLUMN total_amount float DEFAULT 0 NOT NULL;
 
 -- # Table: sell_details
 -- DROP TABLE public.sell_details;
