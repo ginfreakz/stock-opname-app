@@ -39,12 +39,12 @@ func showDeleteDataDialog(w fyne.Window, s *state.Session) {
 
 	confirmBtn := widget.NewButton("Ya, Hapus Data", func() {
 		d.Hide()
-		
+
 		// Show progress dialog
 		progressBar := widget.NewProgressBarInfinite()
 		progressLabel := widget.NewLabel("Menghapus data...")
 		progressContent := container.NewVBox(progressBar, progressLabel)
-		
+
 		progress := dialog.NewCustom("Menghapus Data", "", progressContent, w)
 		progress.Show()
 
@@ -126,7 +126,7 @@ func showDeleteDataDialog(w fyne.Window, s *state.Session) {
 					if err != nil {
 						deleteErr = fmt.Errorf("Gagal menyimpan perubahan: %v", err)
 					} else {
-						successMsg = fmt.Sprintf("Data transaksi sebelum tanggal %s berhasil dihapus!", 
+						successMsg = fmt.Sprintf("Data transaksi sebelum tanggal %s berhasil dihapus!",
 							threeYearsAgo.Format("2006-01-02"))
 					}
 				}
@@ -139,11 +139,11 @@ func showDeleteDataDialog(w fyne.Window, s *state.Session) {
 		// Wait for result in a separate goroutine and update UI
 		go func() {
 			res := <-resultChan
-			
+
 			// ✅ Use fyne.Do to safely update UI from a background goroutine
 			fyne.Do(func() {
 				progress.Hide()
-				
+
 				if res.err != nil {
 					dialog.ShowError(res.err, w)
 				} else {
@@ -181,11 +181,10 @@ func HomePage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	bg := canvas.NewImageFromFile("assets/bg-login.jpg")
 	bg.FillMode = canvas.ImageFillStretch
 
-	title := widget.NewLabelWithStyle(
-		"Home",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Bold: true},
-	)
+	title := canvas.NewText("Home", color.White)
+	title.Alignment = fyne.TextAlignCenter
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 16
 
 	btnPenjualan := widget.NewButton("Penjualan Barang", func() {
 		w.SetContent(PenjualanPage(w, s))
@@ -222,15 +221,24 @@ func HomePage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		logout,
 	)
 
-	card := widget.NewCard("", "", menu)
+	// Create a semi-transparent dark gray rectangle for the panel (matching login)
+	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
+	rect.CornerRadius = 12
+	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
+	rect.StrokeWidth = 1
+	rect.SetMinSize(fyne.NewSize(360, 300))
 
-	cardContainer := container.NewGridWrap(
-		fyne.NewSize(360, 300),
-		card,
+	// Stack menu on top of the background rectangle with padding
+	panel := container.NewMax(
+		rect,
+		container.NewPadded(menu),
 	)
+
+	// Center the panel in the window
+	centeredPanel := container.NewCenter(panel)
 
 	return container.NewMax(
 		bg,
-		container.NewCenter(cardContainer),
+		centeredPanel,
 	)
 }

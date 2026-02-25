@@ -10,12 +10,12 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
+
 	"github.com/google/uuid"
 )
 
@@ -26,44 +26,6 @@ type InventoryItem struct {
 	Qty   string
 	Price string
 }
-
-// focusableTable wraps a Table and intercepts key events so keyboard shortcuts
-// work even after clicking inside the table.
-type focusableTable struct {
-	widget.BaseWidget
-	table      *widget.Table
-	onTypedKey func(*fyne.KeyEvent)
-	focused    bool
-}
-
-func newFocusableTable(table *widget.Table, onTypedKey func(*fyne.KeyEvent)) *focusableTable {
-	ft := &focusableTable{
-		table:      table,
-		onTypedKey: onTypedKey,
-	}
-	ft.ExtendBaseWidget(ft)
-	return ft
-}
-
-func (ft *focusableTable) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(ft.table)
-}
-
-func (ft *focusableTable) FocusGained() { ft.focused = true }
-func (ft *focusableTable) FocusLost()   { ft.focused = false }
-func (ft *focusableTable) TypedRune(r rune) {}
-
-func (ft *focusableTable) TypedKey(ev *fyne.KeyEvent) {
-	if ft.onTypedKey != nil {
-		ft.onTypedKey(ev)
-	}
-}
-
-func (ft *focusableTable) KeyDown(ev *fyne.KeyEvent) {}
-func (ft *focusableTable) KeyUp(ev *fyne.KeyEvent)   {}
-
-var _ fyne.Focusable = (*focusableTable)(nil)
-var _ desktop.Keyable = (*focusableTable)(nil)
 
 func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, refreshCallback func()) {
 
@@ -97,7 +59,7 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 			return
 		}
 
-		priceVal, err := strconv.ParseFloat(price.Text, 64)
+		priceVal, err := ParseCurrencyString(price.Text)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Harga harus berupa angka!"), w)
 			return
@@ -120,7 +82,7 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 		d.Hide()
 		*dialogOpen = false
 
-		dialog.ShowInformation("Success", "Data berhasil disimpan!", w)
+		ShowSuccessToast("Success", "Data berhasil disimpan!", w)
 
 		if refreshCallback != nil {
 			refreshCallback()
@@ -187,7 +149,7 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 			return
 		}
 
-		priceVal, err := strconv.ParseFloat(price.Text, 64)
+		priceVal, err := ParseCurrencyString(price.Text)
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Harga harus berupa angka!"), w)
 			return
@@ -211,7 +173,7 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 		d.Hide()
 		*dialogOpen = false
 
-		dialog.ShowInformation("Success", "Data berhasil diupdate!", w)
+		ShowSuccessToast("Success", "Data berhasil diupdate!", w)
 
 		if refreshCallback != nil {
 			refreshCallback()
@@ -250,11 +212,10 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	})
 	backBtn.Importance = widget.LowImportance
 
-	title := widget.NewLabelWithStyle(
-		"MENU INVENTORY / OPNAME",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Bold: true},
-	)
+	title := canvas.NewText("MENU INVENTORY / OPNAME", color.White)
+	title.Alignment = fyne.TextAlignCenter
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 16
 
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search barang...")
@@ -301,7 +262,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				Code:  item.Code,
 				Name:  item.Name,
 				Qty:   fmt.Sprintf("%.0f", item.Qty),
-				Price: fmt.Sprintf("%.0f", item.Price),
+				Price: FormatCurrency(item.Price),
 			}
 		}
 	}
@@ -379,9 +340,8 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		if focusWrapper == nil {
 			return
 		}
-		if focusWrapper.Size().Width > 0 && focusWrapper.Size().Height > 0 {
-			w.Canvas().Focus(focusWrapper)
-		}
+		// Apply focus even if size is 0 (layout might be pending)
+		w.Canvas().Focus(focusWrapper)
 	}
 
 	refreshTable := func() {
@@ -451,7 +411,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 								return
 							}
 							dialogOpen = false
-							dialog.ShowInformation("Success", "Data berhasil dihapus!", w)
+							ShowSuccessToast("Success", "Data berhasil dihapus!", w)
 							refreshTable()
 						} else {
 							dialogOpen = false
@@ -528,11 +488,9 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	w.Canvas().SetOnTypedKey(handleKey)
 
 	// ===== FOOTER =====
-	footer := widget.NewLabelWithStyle(
-		"Insert = input data   |   E = Edit data   |   Del = Delete data   |   ↑↓ = Navigate",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Italic: true},
-	)
+	footer := canvas.NewText("Insert = input data   |   E = Edit data   |   Del = Delete data   |   ↑↓ = Navigate", color.White)
+	footer.Alignment = fyne.TextAlignCenter
+	footer.TextStyle = fyne.TextStyle{Italic: true}
 
 	// ===== CENTERED TABLE WRAPPER =====
 	tableWrapper := container.NewCenter(
@@ -551,7 +509,21 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		tableWrapper,
 	)
 
-	card := widget.NewCard("", "", content)
+	// Create a semi-transparent dark gray rectangle for the panel (matching login/home)
+	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
+	rect.CornerRadius = 12
+	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
+	rect.StrokeWidth = 1
+	rect.SetMinSize(fyne.NewSize(980, 560))
+
+	// Stack content on top of the background rectangle with padding
+	panel := container.NewMax(
+		rect,
+		container.NewPadded(content),
+	)
+
+	// Center the panel in the window
+	centeredPanel := container.NewCenter(panel)
 
 	// Defer initial focus until widget is on canvas (fyne.Do for thread safety)
 	time.AfterFunc(150*time.Millisecond, func() {
@@ -562,11 +534,6 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	return container.NewMax(
 		bg,
-		container.NewCenter(
-			container.NewGridWrap(
-				fyne.NewSize(980, 560),
-				card,
-			),
-		),
+		centeredPanel,
 	)
 }

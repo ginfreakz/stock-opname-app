@@ -2,7 +2,8 @@ package ui
 
 import (
 	"database/sql"
-	
+	"image/color"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -32,10 +33,10 @@ func LoginPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	password.SetPlaceHolder("Password")
 
 	// Status label for showing errors
-	statusLabel := widget.NewLabel("")
+	statusLabel := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
 	statusLabel.Hide()
 
-	loginBtn := widget.NewButton("Login", func() {
+	doLogin := func() {
 		if username.Text == "" || password.Text == "" {
 			statusLabel.SetText("Username dan Password harus diisi!")
 			statusLabel.Show()
@@ -61,31 +62,52 @@ func LoginPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 		// Navigate to home page
 		w.SetContent(HomePage(w, s))
-	})
-	loginBtn.Importance = widget.HighImportance
+	}
+
+	username.OnSubmitted = func(string) {
+		w.Canvas().Focus(password)
+	}
+
+	password.OnSubmitted = func(string) {
+		doLogin()
+	}
 
 	header := container.NewVBox(
 		icon,
 		title,
+		widget.NewLabel(""), // Add visual spacing
 	)
 
 	form := container.NewVBox(
 		header,
-		username,
-		password,
+		container.NewPadded(username),
+		container.NewPadded(password),
 		statusLabel,
-		loginBtn,
+		widget.NewLabel(""), // Add spacing before instruction
 	)
 
-	card := widget.NewCard("", "", form)
+	// Create a semi-transparent dark gray rectangle for the panel
+	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
+	rect.CornerRadius = 12
+	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
+	rect.StrokeWidth = 1
+	rect.SetMinSize(fyne.NewSize(380, 320))
 
-	cardContainer := container.NewGridWrap(
-		fyne.NewSize(360, 280),
-		card,
+	// Container for the form with padding
+	formContent := container.NewPadded(form)
+
+	// Stack form on top of the background rectangle
+	panel := container.NewMax(
+		rect,
+		formContent,
 	)
 
+	// Center the panel in the window
+	centeredPanel := container.NewCenter(panel)
+
+	// Combine background and centered panel
 	return container.NewMax(
-		bg,
-		container.NewCenter(cardContainer),
+		bg,            // stretched background
+		centeredPanel, // floating glass-effect panel
 	)
 }
