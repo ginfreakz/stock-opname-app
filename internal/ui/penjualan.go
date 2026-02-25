@@ -12,9 +12,10 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	
+
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
+
 	"github.com/google/uuid"
 )
 
@@ -39,17 +40,20 @@ type PenjualanFull struct {
 	Items  []PenjualanItem
 }
 
-func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
+func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func(), initialFocus string, existingData *models.SellFull) {
 	// Header form fields
 	tglNota := widget.NewEntry()
 	tglNota.SetText(time.Now().Format("2006-01-02"))
-	
+	tglNota.OnSubmitted = func(s string) {
+		// No manual focus control for tglNota since it's in a border with calendarBtn
+	}
+
 	// Calendar button
 	calendarBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
 		dateEntry := widget.NewEntry()
 		dateEntry.SetText(tglNota.Text)
 		dateEntry.SetPlaceHolder("YYYY-MM-DD")
-		
+
 		dateDialog := dialog.NewCustomConfirm(
 			"Pilih Tanggal",
 			"OK",
@@ -77,7 +81,18 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 	kodeBarang := widget.NewEntry()
 	namaBarang := widget.NewEntry()
 	qty := widget.NewEntry()
-	
+
+	// Focus flow
+	noNota.OnSubmitted = func(s string) {
+		w.Canvas().Focus(customer)
+	}
+	customer.OnSubmitted = func(s string) {
+		w.Canvas().Focus(kodeBarang)
+	}
+	kodeBarang.OnSubmitted = func(s string) {
+		w.Canvas().Focus(qty)
+	}
+
 	// Harga dropdown (combo select with arrow)
 	// hargaOptions := []string{"Harga Dus", "Harga Pack", "Harga Rent"}
 	// harga := widget.NewSelect(hargaOptions, func(value string) {
@@ -87,6 +102,16 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 
 	// Store selected item for validation
 	var selectedItem *models.Item
+	var selectedItemIndex int = -1
+
+	// Function to clear item form
+	clearItemForm := func() {
+		kodeBarang.SetText("")
+		namaBarang.SetText("")
+		qty.SetText("")
+		selectedItem = nil
+		selectedItemIndex = -1
+	}
 
 	// Kode barang lookup
 	kodeBarang.OnChanged = func(code string) {
@@ -95,7 +120,7 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 			selectedItem = nil
 			return
 		}
-		
+
 		item, err := s.ItemRepo.GetByCode(code)
 		if err == nil {
 			namaBarang.SetText(item.Name)
@@ -110,6 +135,26 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 	var items []PenjualanItem
 	var itemsTable *widget.Table
 
+	// Populate if existing
+	if existingData != nil {
+		tglNota.SetText(existingData.Header.SellDate.Format("2006-01-02"))
+		noNota.SetText(existingData.Header.SellInvoiceNum)
+		customer.SetText(existingData.Header.CustomerName)
+
+		displayItems := LoadSellDisplayItems(s, existingData.Details)
+		items = make([]PenjualanItem, len(displayItems))
+		for i, v := range displayItems {
+			items[i] = PenjualanItem{
+				ItemID:     existingData.Details[i].ItemID,
+				KodeBarang: v.Code,
+				NamaBarang: v.Name,
+				Qty:        v.Qty,
+				Harga:      v.Price,
+				Total:      v.Total,
+			}
+		}
+	}
+
 	// Function to refresh items table
 	refreshItemsTable := func() {
 		if itemsTable != nil {
@@ -117,8 +162,30 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		}
 	}
 
-	// Add item button
-	addItemBtn := widget.NewButton("Add", func() {
+	// Buttons
+	addItemBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), nil)
+	addItemBtn.Importance = widget.HighImportance
+
+	deleteItemBtn := widget.NewButtonWithIcon("Hapus Item", theme.DeleteIcon(), nil)
+	deleteItemBtn.Importance = widget.DangerImportance
+
+	clearBtn := widget.NewButtonWithIcon("Batal", theme.ContentClearIcon(), nil)
+
+	updateButtonStates := func() {
+		if selectedItemIndex >= 0 {
+			addItemBtn.SetText("Update")
+			addItemBtn.SetIcon(theme.DocumentSaveIcon())
+			deleteItemBtn.Show()
+			clearBtn.Show()
+		} else {
+			addItemBtn.SetText("Add")
+			addItemBtn.SetIcon(theme.ContentAddIcon())
+			deleteItemBtn.Hide()
+			clearBtn.Hide()
+		}
+	}
+
+	addItemBtn.OnTapped = func() {
 		// Validate inputs
 		if kodeBarang.Text == "" || selectedItem == nil || qty.Text == "" {
 			dialog.ShowInformation("Error", "Kode barang dan qty harus diisi dan kode barang harus valid!", w)
@@ -136,32 +203,67 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		}
 
 		// Check stock availability
-		if qtyVal > selectedItem.Qty {
-			dialog.ShowError(fmt.Errorf("Stok tidak mencukupi! Stok tersedia: %.0f", selectedItem.Qty), w)
+		// Special case: if updating, adding back the current qty to available stock for check
+		availableStock := selectedItem.Qty
+		if selectedItemIndex >= 0 {
+			currentQty, _ := strconv.ParseFloat(items[selectedItemIndex].Qty, 64)
+			availableStock += currentQty
+		}
+
+		if qtyVal > availableStock {
+			dialog.ShowError(fmt.Errorf("Stok tidak mencukupi! Stok tersedia: %.0f", availableStock), w)
 			return
 		}
-		
+
 		total := qtyVal * hargaVal
 
-		// Add to items list
-		items = append(items, PenjualanItem{
+		newItem := PenjualanItem{
 			ItemID:     selectedItem.ID,
 			KodeBarang: kodeBarang.Text,
 			NamaBarang: namaBarang.Text,
 			Qty:        qty.Text,
 			Harga:      fmt.Sprintf("%.0f", hargaVal),
 			Total:      fmt.Sprintf("%.0f", total),
-		})
+		}
+
+		if selectedItemIndex >= 0 {
+			// Update existing
+			items[selectedItemIndex] = newItem
+		} else {
+			// Add to items list
+			items = append(items, newItem)
+		}
 
 		// Clear entry fields
-		kodeBarang.SetText("")
-		namaBarang.SetText("")
-		qty.SetText("")
-		selectedItem = nil
+		clearItemForm()
+		updateButtonStates()
 
 		// Refresh table
 		refreshItemsTable()
-	})
+
+		// Return focus to kodeBarang for next item
+		w.Canvas().Focus(kodeBarang)
+	}
+
+	qty.OnSubmitted = func(s string) {
+		addItemBtn.OnTapped()
+	}
+
+	deleteItemBtn.OnTapped = func() {
+		if selectedItemIndex >= 0 {
+			items = append(items[:selectedItemIndex], items[selectedItemIndex+1:]...)
+			clearItemForm()
+			updateButtonStates()
+			refreshItemsTable()
+		}
+	}
+
+	clearBtn.OnTapped = func() {
+		clearItemForm()
+		updateButtonStates()
+	}
+
+	updateButtonStates() // Initial state
 
 	// Header form
 	headerForm := widget.NewForm(
@@ -169,16 +271,26 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		widget.NewFormItem("No. Nota", noNota),
 		widget.NewFormItem("Customer", customer),
 	)
+	headerFormSeparator := widget.NewSeparator()
 
 	// Item entry form
-	itemForm := container.NewGridWithColumns(2,
-		widget.NewLabel("Kode Barang"),
-		kodeBarang,
-		widget.NewLabel("Nama Barang"),
-		namaBarang,
-		widget.NewLabel("Qty"),
-		qty,
+	itemForm := widget.NewForm(
+		widget.NewFormItem("Kode Barang", kodeBarang),
+		widget.NewFormItem("Nama Barang", namaBarang),
+		widget.NewFormItem("Qty", qty),
 	)
+	itemFormSeparator := widget.NewSeparator()
+	itemFormButtons := container.NewHBox(addItemBtn, deleteItemBtn, clearBtn)
+
+	if initialFocus == "item" {
+		headerForm.Hide()
+		headerFormSeparator.Hide()
+	} else {
+		// INS Mode: Hide Item entry
+		itemForm.Hide()
+		itemFormSeparator.Hide()
+		itemFormButtons.Hide()
+	}
 
 	// Items table
 	itemHeaders := []string{"Kode Barang", "Nama Barang", "QTY", "Harga", "Total", ""}
@@ -190,9 +302,10 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 			return len(items) + 1, len(itemHeaders)
 		},
 		func() fyne.CanvasObject {
-			bg := canvas.NewRectangle(color.Transparent)
+			bg := canvas.NewRectangle(color.White)
 			text := canvas.NewText("", color.Black)
-			text.TextSize = 12
+			text.Alignment = fyne.TextAlignCenter
+			text.TextSize = 13
 			btn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {})
 			return container.NewMax(bg, text, btn)
 		},
@@ -205,23 +318,18 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 			btn.Hide()
 
 			if id.Row == 0 {
-				// Header row
 				bg.FillColor = headerBg
 				text.Text = itemHeaders[id.Col]
 				text.Color = color.White
-				text.TextSize = 13
 				text.TextStyle = fyne.TextStyle{Bold: true}
 				text.Alignment = fyne.TextAlignCenter
 				text.Show()
-				text.Refresh()
 				return
 			}
 
-			// Data rows
 			bg.FillColor = rowBg
 			text.Color = color.Black
 			text.TextStyle = fyne.TextStyle{}
-			text.TextSize = 12
 
 			if id.Row-1 < len(items) {
 				item := items[id.Row-1]
@@ -247,27 +355,45 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 					text.Alignment = fyne.TextAlignTrailing
 					text.Show()
 				case 5:
-					// Delete button
 					text.Hide()
 					btn.OnTapped = func() {
 						rowIndex := id.Row - 1
-						// Remove item
 						items = append(items[:rowIndex], items[rowIndex+1:]...)
 						refreshItemsTable()
 					}
 					btn.Show()
 				}
+			} else {
+				text.Text = ""
+				text.Hide()
 			}
 			text.Refresh()
 		},
 	)
 
-	itemsTable.SetColumnWidth(0, 100)
-	itemsTable.SetColumnWidth(1, 150)
-	itemsTable.SetColumnWidth(2, 60)
-	itemsTable.SetColumnWidth(3, 100)
-	itemsTable.SetColumnWidth(4, 100)
-	itemsTable.SetColumnWidth(5, 50)
+	itemsTable.OnSelected = func(id widget.TableCellID) {
+		if id.Row > 0 && id.Row-1 < len(items) {
+			selectedItemIndex = id.Row - 1
+			item := items[selectedItemIndex]
+
+			// Load item metadata to get the actual models.Item
+			it, err := s.ItemRepo.GetByCode(item.KodeBarang)
+			if err == nil {
+				selectedItem = it
+				kodeBarang.SetText(item.KodeBarang)
+				namaBarang.SetText(item.NamaBarang)
+				qty.SetText(item.Qty)
+				updateButtonStates()
+			}
+		}
+	}
+
+	itemsTable.SetColumnWidth(0, 120) // Kode
+	itemsTable.SetColumnWidth(1, 200) // Nama
+	itemsTable.SetColumnWidth(2, 60)  // Qty
+	itemsTable.SetColumnWidth(3, 120) // Harga
+	itemsTable.SetColumnWidth(4, 120) // Total
+	itemsTable.SetColumnWidth(5, 40)  // Delete
 
 	// Dialog content
 	var d dialog.Dialog
@@ -278,7 +404,7 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 			dialog.ShowInformation("Error", "Header data harus diisi!", w)
 			return
 		}
-		if len(items) == 0 {
+		if initialFocus == "item" && len(items) == 0 {
 			dialog.ShowInformation("Error", "Minimal 1 item harus ditambahkan!", w)
 			return
 		}
@@ -296,9 +422,19 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 				SellInvoiceNum: noNota.Text,
 				SellDate:       sellDate,
 				CustomerName:   customer.Text,
-				CreatedBy:      &s.User.ID,
 			},
 			Details: make([]models.SellDetail, len(items)),
+		}
+
+		if existingData != nil {
+			sell.Header.ID = existingData.Header.ID
+			sell.Header.CreatedAt = existingData.Header.CreatedAt
+			sell.Header.CreatedBy = existingData.Header.CreatedBy
+			now := time.Now()
+			sell.Header.UpdatedAt = &now
+			sell.Header.UpdatedBy = &s.User.ID
+		} else {
+			sell.Header.CreatedBy = &s.User.ID
 		}
 
 		for i, item := range items {
@@ -315,15 +451,20 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 		}
 
 		// Save to database
-		err = s.SellRepo.Create(sell)
+		if existingData != nil {
+			err = s.SellRepo.Update(sell)
+		} else {
+			err = s.SellRepo.Create(sell)
+		}
+
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal menyimpan data: %v", err), w)
 			return
 		}
 
-		dialog.ShowInformation("Success", "Data penjualan berhasil disimpan!", w)
+		ShowSuccessToast("Success", "Data penjualan berhasil disimpan!", w)
 		d.Hide()
-		
+
 		if refreshCallback != nil {
 			refreshCallback()
 		}
@@ -337,29 +478,58 @@ func showAddPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback fun
 
 	buttons := container.NewGridWithColumns(2, cancelBtn, submitBtn)
 
+	labelText := "Nota Baru"
+	if initialFocus == "item" {
+		labelText = "Isi Nota"
+	}
+
+	tableScroll := container.NewScroll(itemsTable)
+	if initialFocus != "item" {
+		tableScroll.Hide()
+	}
+
 	content := container.NewBorder(
 		container.NewVBox(
-			widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Add new data", fyne.TextAlignCenter, fyne.TextStyle{}),
+			container.NewCenter(widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})),
+			container.NewCenter(widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})),
 			widget.NewSeparator(),
 			headerForm,
-			widget.NewSeparator(),
+			headerFormSeparator,
 			itemForm,
-			container.NewHBox(addItemBtn),
-			widget.NewSeparator(),
+			itemFormButtons,
+			itemFormSeparator,
 		),
 		buttons,
 		nil,
 		nil,
-		container.NewScroll(itemsTable),
+		tableScroll,
 	)
 
-	bg := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-	dialogContent := container.NewMax(bg, container.NewPadded(content))
+	dialogContent := container.NewPadded(content)
 
 	d = dialog.NewCustom("", "", dialogContent, w)
 	d.Resize(fyne.NewSize(650, 600))
 	d.Show()
+
+	// Initial focus
+	time.AfterFunc(100*time.Millisecond, func() {
+		fyne.Do(func() {
+			if initialFocus == "item" {
+				w.Canvas().Focus(kodeBarang)
+			} else {
+				w.Canvas().Focus(tglNota)
+			}
+		})
+	})
+}
+
+func showEditPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID, refreshCallback func()) {
+	sell, err := s.SellRepo.GetByID(headerID)
+	if err != nil {
+		dialog.ShowError(err, w)
+		return
+	}
+	showPenjualanDialog(w, s, refreshCallback, "item", sell)
 }
 
 func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID) {
@@ -375,13 +545,10 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 	noNota := widget.NewLabel(sell.Header.SellInvoiceNum)
 	customer := widget.NewLabel(sell.Header.CustomerName)
 
-	headerInfo := container.NewGridWithColumns(2,
-		widget.NewLabel("Tgl. Nota"),
-		tglNota,
-		widget.NewLabel("No. Nota"),
-		noNota,
-		widget.NewLabel("Customer"),
-		customer,
+	headerInfo := container.NewVBox(
+		container.NewGridWithColumns(2, canvas.NewText("Tgl. Nota", color.White), tglNota),
+		container.NewGridWithColumns(2, canvas.NewText("No. Nota", color.White), noNota),
+		container.NewGridWithColumns(2, canvas.NewText("Customer", color.White), customer),
 	)
 
 	// Convert details to display items using helper function
@@ -435,10 +602,10 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 				text.Text = item.Qty
 				text.Alignment = fyne.TextAlignCenter
 			case 3:
-				text.Text = item.Price
+				text.Text = item.Price // This is already "Rp ..." if LoadSellDisplayItems was updated correctly
 				text.Alignment = fyne.TextAlignTrailing
 			case 4:
-				text.Text = item.Total
+				text.Text = item.Total // This is already "Rp ..." if LoadSellDisplayItems was updated correctly
 				text.Alignment = fyne.TextAlignTrailing
 			}
 			text.Refresh()
@@ -459,8 +626,8 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 
 	content := container.NewBorder(
 		container.NewVBox(
-			widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("View data", fyne.TextAlignCenter, fyne.TextStyle{}),
+			container.NewCenter(widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})),
+			container.NewCenter(widget.NewLabelWithStyle("View data", fyne.TextAlignCenter, fyne.TextStyle{})),
 			widget.NewSeparator(),
 			headerInfo,
 			widget.NewSeparator(),
@@ -471,8 +638,7 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 		container.NewScroll(itemsTable),
 	)
 
-	bg := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-	dialogContent := container.NewMax(bg, container.NewPadded(content))
+	dialogContent := container.NewPadded(content)
 
 	d = dialog.NewCustom("", "", dialogContent, w)
 	d.Resize(fyne.NewSize(650, 500))
@@ -490,16 +656,15 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	})
 	backBtn.Importance = widget.LowImportance
 
-	title := widget.NewLabelWithStyle(
-		"MENU PENJUALAN BARANG",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Bold: true},
-	)
+	title := canvas.NewText("MENU PENJUALAN BARANG", color.White)
+	title.Alignment = fyne.TextAlignCenter
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 16
 
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search...")
 
-	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
+	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
 
 	// Table headers
 	headers := []string{"Tgl. Nota", "No. Nota", "Customer"}
@@ -511,15 +676,16 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Load data from database
 	loadData := func(keyword string) {
+		selectedRow = -1
 		var headers []models.SellHeader
 		var err error
-		
+
 		if keyword == "" {
 			headers, err = s.SellRepo.GetAll()
 		} else {
 			headers, err = s.SellRepo.Search(keyword)
 		}
-		
+
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal memuat data: %v", err), w)
 			return
@@ -562,12 +728,17 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				text.TextSize = 14
 				text.TextStyle = fyne.TextStyle{Bold: true}
 				text.Alignment = fyne.TextAlignCenter
-				text.Refresh()
 				return
 			}
 
-			bg.FillColor = rowBg
-			text.Color = color.Black
+			if id.Row-1 == selectedRow {
+				bg.FillColor = color.NRGBA{R: 100, G: 150, B: 255, A: 255}
+				text.Color = color.White
+			} else {
+				bg.FillColor = rowBg
+				text.Color = color.Black
+			}
+
 			text.TextStyle = fyne.TextStyle{}
 			text.TextSize = 13
 
@@ -585,7 +756,6 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					text.Alignment = fyne.TextAlignLeading
 				}
 			}
-			text.Refresh()
 		},
 	)
 
@@ -593,49 +763,34 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(1, 250)
 	table.SetColumnWidth(2, 250)
 
-	// Table selection
-	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row > 0 {
-			selectedRow = id.Row - 1
+	var focusWrapper *focusableTable
+
+	safeFocus := func() {
+		if focusWrapper != nil {
+			fyne.Do(func() {
+				w.Canvas().Focus(focusWrapper)
+			})
 		}
 	}
-
-	// Search functionality
-	search.OnChanged = func(keyword string) {
-		loadData(keyword)
-		table.Refresh()
-	}
-
-	// Footer
-	footer := widget.NewLabelWithStyle(
-		"Insert = input data   |   V = View data",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Italic: true},
-	)
-
-	// Table wrapper
-	tableWrapper := container.NewCenter(
-		container.NewGridWrap(
-			fyne.NewSize(780, 400),
-			table,
-		),
-	)
-
-	// Content
-	content := container.NewBorder(header, footer, nil, nil, tableWrapper)
-	card := widget.NewCard("", "", content)
 
 	// Refresh function
 	refreshTable := func() {
 		loadData(search.Text)
 		table.Refresh()
+		safeFocus()
 	}
 
-	// Keyboard shortcuts
-	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+	// Keyboard shortcuts handler
+	handleKey := func(k *fyne.KeyEvent) {
 		switch k.Name {
 		case fyne.KeyInsert:
-			showAddPenjualanDialog(w, s, refreshTable)
+			showPenjualanDialog(w, s, refreshTable, "header", nil)
+		case fyne.KeyE:
+			if selectedRow >= 0 && selectedRow < len(data) {
+				showEditPenjualanDialog(w, s, data[selectedRow].ID, refreshTable)
+			} else {
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
 		case fyne.KeyV:
 			if selectedRow >= 0 && selectedRow < len(data) {
 				showViewPenjualanDialog(w, s, data[selectedRow].ID)
@@ -643,15 +798,63 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
 			}
 		}
+	}
+
+	// Table selection
+	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row > 0 {
+			selectedRow = id.Row - 1
+			table.Refresh()
+			time.AfterFunc(50*time.Millisecond, safeFocus)
+		}
+	}
+
+	// ===== FOCUSABLE WRAPPER =====
+	focusWrapper = newFocusableTable(table, handleKey)
+
+	// Canvas-level fallback
+	w.Canvas().SetOnTypedKey(handleKey)
+
+	// Table wrapper (using focusWrapper instead of table)
+	tableWrapper := container.NewCenter(
+		container.NewGridWrap(
+			fyne.NewSize(780, 400),
+			focusWrapper,
+		),
+	)
+
+	// Footer
+	footer := canvas.NewText("[Insert] Nota Baru  [E] Isi Nota ", color.White)
+	footer.TextStyle = fyne.TextStyle{Italic: true}
+
+	// Content
+	content := container.NewBorder(header, footer, nil, nil, tableWrapper)
+
+	// Create a semi-transparent dark gray rectangle for the panel (matching login/home)
+	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
+	rect.CornerRadius = 12
+	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
+	rect.StrokeWidth = 1
+	rect.SetMinSize(fyne.NewSize(980, 560))
+
+	// Stack content on top of the background rectangle with padding
+	panel := container.NewMax(
+		rect,
+		container.NewPadded(content),
+	)
+
+	// Center the panel in the window
+	centeredPanel := container.NewCenter(panel)
+
+	// Initial focus after 150ms
+	time.AfterFunc(150*time.Millisecond, func() {
+		fyne.Do(func() {
+			safeFocus()
+		})
 	})
 
 	return container.NewMax(
 		bg,
-		container.NewCenter(
-			container.NewGridWrap(
-				fyne.NewSize(980, 560),
-				card,
-			),
-		),
+		centeredPanel,
 	)
 }
