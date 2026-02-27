@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/layout"
 
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
@@ -24,6 +25,7 @@ type PenjualanHeader struct {
 	TglNota  string
 	NoNota   string
 	Customer string
+	Total    string
 }
 
 type PenjualanItem struct {
@@ -135,6 +137,21 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	var items []PenjualanItem
 	var itemsTable *widget.Table
 
+	totalLabel := canvas.NewText("Total : Rp 0", color.Black)
+	totalLabel.TextStyle = fyne.TextStyle{Bold: true}
+	totalLabel.Alignment = fyne.TextAlignTrailing
+
+	recalculateTotal := func() float64 {
+		var sum float64
+		for _, item := range items {
+			val, _ := strconv.ParseFloat(item.Total, 64)
+			sum += val
+		}
+		totalLabel.Text = "Total : " + FormatCurrency(sum)
+		totalLabel.Refresh()
+		return sum
+	}
+
 	// Populate if existing
 	if existingData != nil {
 		tglNota.SetText(existingData.Header.SellDate.Format("2006-01-02"))
@@ -153,12 +170,14 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 				Total:      v.Total,
 			}
 		}
+		recalculateTotal()
 	}
 
 	// Function to refresh items table
 	refreshItemsTable := func() {
 		if itemsTable != nil {
 			itemsTable.Refresh()
+			recalculateTotal()
 		}
 	}
 
@@ -416,12 +435,15 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
+		grandTotal := recalculateTotal()
+
 		// Build sell model
 		sell := &models.SellFull{
 			Header: models.SellHeader{
 				SellInvoiceNum: noNota.Text,
 				SellDate:       sellDate,
 				CustomerName:   customer.Text,
+				TotalAmount:    grandTotal,
 			},
 			Details: make([]models.SellDetail, len(items)),
 		}
@@ -483,14 +505,26 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		labelText = "Isi Nota"
 	}
 
-	tableScroll := container.NewScroll(itemsTable)
+	tableSection := container.NewVBox(
+		container.NewScroll(itemsTable),
+		widget.NewSeparator(),
+		container.NewHBox(
+			layout.NewSpacer(),
+			totalLabel,
+		),
+	)
+
 	if initialFocus != "item" {
-		tableScroll.Hide()
+		tableSection.Hide()
 	}
 
 	content := container.NewBorder(
 		container.NewVBox(
-			container.NewCenter(widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})),
+			container.NewCenter(widget.NewLabelWithStyle(
+				"MENU PENJUALAN BARANG",
+				fyne.TextAlignCenter,
+				fyne.TextStyle{Bold: true},
+			)),
 			container.NewCenter(widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})),
 			widget.NewSeparator(),
 			headerForm,
@@ -502,7 +536,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		buttons,
 		nil,
 		nil,
-		tableScroll,
+		tableSection,
 	)
 
 	dialogContent := container.NewPadded(content)
@@ -558,6 +592,13 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 	itemHeaders := []string{"Kode Barang", "Nama Barang", "QTY", "Harga", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 	rowBg := color.NRGBA{R: 235, G: 235, B: 235, A: 255}
+
+	totalLabel := canvas.NewText(
+		"Total : "+FormatCurrency(sell.Header.TotalAmount),
+		color.Black,
+	)
+	totalLabel.TextStyle = fyne.TextStyle{Bold: true}
+	totalLabel.Alignment = fyne.TextAlignTrailing
 
 	itemsTable := widget.NewTable(
 		func() (int, int) {
@@ -624,9 +665,22 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 		d.Hide()
 	})
 
+	tableSection := container.NewVBox(
+		container.NewScroll(itemsTable),
+		widget.NewSeparator(),
+		container.NewHBox(
+			layout.NewSpacer(),
+			totalLabel,
+		),
+	)
+
 	content := container.NewBorder(
 		container.NewVBox(
-			container.NewCenter(widget.NewLabelWithStyle("MENU PENJUALAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})),
+			container.NewCenter(widget.NewLabelWithStyle(
+				"MENU PENJUALAN BARANG",
+				fyne.TextAlignCenter,
+				fyne.TextStyle{Bold: true},
+			)),
 			container.NewCenter(widget.NewLabelWithStyle("View data", fyne.TextAlignCenter, fyne.TextStyle{})),
 			widget.NewSeparator(),
 			headerInfo,
@@ -635,7 +689,7 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 		container.NewCenter(closeBtn),
 		nil,
 		nil,
-		container.NewScroll(itemsTable),
+		tableSection,
 	)
 
 	dialogContent := container.NewPadded(content)
@@ -667,7 +721,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
 
 	// Table headers
-	headers := []string{"Tgl. Nota", "No. Nota", "Customer"}
+	headers := []string{"Tgl. Nota", "No. Nota", "Customer", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 	rowBg := color.NRGBA{R: 235, G: 235, B: 235, A: 255}
 
@@ -698,6 +752,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				TglNota:  h.SellDate.Format("2006-01-02"),
 				NoNota:   h.SellInvoiceNum,
 				Customer: h.CustomerName,
+				Total:    FormatCurrency(h.TotalAmount),
 			}
 		}
 	}
@@ -753,15 +808,19 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					text.Alignment = fyne.TextAlignCenter
 				case 2:
 					text.Text = item.Customer
-					text.Alignment = fyne.TextAlignLeading
+					text.Alignment = fyne.TextAlignCenter
+				case 3:
+					text.Text = item.Total
+					text.Alignment = fyne.TextAlignCenter
 				}
 			}
 		},
 	)
 
-	table.SetColumnWidth(0, 250)
-	table.SetColumnWidth(1, 250)
-	table.SetColumnWidth(2, 250)
+	table.SetColumnWidth(0, 120)
+	table.SetColumnWidth(1, 200)
+	table.SetColumnWidth(2, 240)
+	table.SetColumnWidth(3, 210)
 
 	var focusWrapper *focusableTable
 
@@ -783,19 +842,30 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// Keyboard shortcuts handler
 	handleKey := func(k *fyne.KeyEvent) {
 		switch k.Name {
+
+		// New nota (header only)
 		case fyne.KeyInsert:
 			showPenjualanDialog(w, s, refreshTable, "header", nil)
-		case fyne.KeyE:
+
+		// Isi Nota (detail items)
+		case fyne.KeyI:
 			if selectedRow >= 0 && selectedRow < len(data) {
 				showEditPenjualanDialog(w, s, data[selectedRow].ID, refreshTable)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
-		case fyne.KeyV:
+
+		// Edit header nota
+		case fyne.KeyE:
 			if selectedRow >= 0 && selectedRow < len(data) {
-				showViewPenjualanDialog(w, s, data[selectedRow].ID)
+				sell, err := s.SellRepo.GetByID(data[selectedRow].ID)
+				if err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				showPenjualanDialog(w, s, refreshTable, "header", sell)
 			} else {
-				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
 		}
 	}
@@ -824,7 +894,10 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	)
 
 	// Footer
-	footer := canvas.NewText("[Insert] Nota Baru  [E] Isi Nota ", color.White)
+	footer := canvas.NewText(
+		"[Insert] Nota Baru  [I] Isi Nota  [E] Edit Header",
+		color.White,
+	)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
 	// Content

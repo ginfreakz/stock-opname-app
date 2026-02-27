@@ -29,18 +29,30 @@ func (r *SellRepository) Create(sell *models.SellFull) error {
 	sell.Header.CreatedAt = time.Now()
 
 	headerQuery := `INSERT INTO sell_headers 
-					(id, sell_invoice_num, sell_date, customer_name, created_at, created_by) 
-					VALUES ($1, $2, $3, $4, $5, $6)`
+		(id, sell_invoice_num, sell_date, customer_name, total_amount, created_at, created_by) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, err = tx.Exec(headerQuery, sell.Header.ID, sell.Header.SellInvoiceNum,
-		sell.Header.SellDate, sell.Header.CustomerName,
-		sell.Header.CreatedAt, sell.Header.CreatedBy)
+	_, err = tx.Exec(
+		headerQuery,
+		sell.Header.ID,
+		sell.Header.SellInvoiceNum,
+		sell.Header.SellDate,
+		sell.Header.CustomerName,
+		sell.Header.TotalAmount,
+		sell.Header.CreatedAt,
+		sell.Header.CreatedBy,
+	)
 	if err != nil {
 		return err
 	}
 
-	// Insert details and update stock
-	return r.insertDetails(tx, &sell.Header, sell.Details)
+	// Insert details (may be empty — that's OK)
+	if err := r.insertDetails(tx, &sell.Header, sell.Details); err != nil {
+		return err
+	}
+
+	// ✅ COMMIT IS REQUIRED
+	return tx.Commit()
 }
 
 func (r *SellRepository) Update(sell *models.SellFull) error {
@@ -79,13 +91,13 @@ func (r *SellRepository) Update(sell *models.SellFull) error {
 	now := time.Now()
 	sell.Header.UpdatedAt = &now
 	headerQuery := `UPDATE sell_headers SET 
-					sell_invoice_num = $1, sell_date = $2, customer_name = $3, 
-					updated_at = $4, updated_by = $5 
-					WHERE id = $6`
+					sell_invoice_num = $1, sell_date = $2, customer_name = $3, total_amount = $4, 
+					updated_at = $5, updated_by = $6 
+					WHERE id = $7`
 
 	_, err = tx.Exec(headerQuery, sell.Header.SellInvoiceNum, sell.Header.SellDate,
-		sell.Header.CustomerName, sell.Header.UpdatedAt,
-		sell.Header.UpdatedBy, sell.Header.ID)
+		sell.Header.CustomerName, sell.Header.TotalAmount,
+		sell.Header.UpdatedAt, sell.Header.UpdatedBy, sell.Header.ID)
 	if err != nil {
 		return err
 	}
@@ -140,7 +152,7 @@ func (r *SellRepository) insertDetails(tx *sqlx.Tx, header *models.SellHeader, d
 
 func (r *SellRepository) GetAll() ([]models.SellHeader, error) {
 	var headers []models.SellHeader
-	query := `SELECT id, sell_invoice_num, sell_date, customer_name, 
+	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount, 
 			  created_at, updated_at, created_by, updated_by 
 			  FROM sell_headers 
 			  ORDER BY sell_date DESC`

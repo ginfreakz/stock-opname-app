@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/layout"
 
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
@@ -24,6 +25,7 @@ type PembelianHeader struct {
 	TglNota string
 	NoNota  string
 	Vendor  string
+	Total   string
 }
 
 type PembelianItem struct {
@@ -98,6 +100,26 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	var items []PembelianItem
 	var itemsTable *widget.Table
 
+	// =====================
+	// Grand total UI
+	// =====================
+	totalLabel := canvas.NewText("Total : Rp 0", color.Black)
+	totalLabel.TextStyle = fyne.TextStyle{Bold: true}
+	totalLabel.Alignment = fyne.TextAlignTrailing
+
+	recalculateTotal := func() float64 {
+		var sum float64
+		for _, item := range items {
+			val, err := ParseCurrencyString(item.Total)
+			if err == nil {
+				sum += val
+			}
+		}
+		totalLabel.Text = "Total : " + FormatCurrency(sum)
+		totalLabel.Refresh()
+		return sum
+	}
+
 	if existingData != nil {
 		tglNota.SetText(existingData.Header.PurchaseDate.Format("2006-01-02"))
 		noNota.SetText(existingData.Header.PurchaseInvoiceNum)
@@ -116,11 +138,12 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			}
 		}
 	}
-
+	recalculateTotal()
 	refreshItemsTable := func() {
 		if itemsTable != nil {
 			itemsTable.Refresh()
 		}
+		recalculateTotal()
 	}
 	// Buttons
 	addItemBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), nil)
@@ -356,11 +379,14 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 
 		purchaseDate, _ := time.Parse("2006-01-02", tglNota.Text)
+		grandTotal := recalculateTotal()
+
 		purchase := &models.PurchaseFull{
 			Header: models.PurchaseHeader{
 				PurchaseInvoiceNum: noNota.Text,
 				PurchaseDate:       purchaseDate,
 				SupplierName:       vendor.Text,
+				TotalAmount:        grandTotal,
 			},
 			Details: make([]models.PurchaseDetail, len(items)),
 		}
@@ -418,14 +444,34 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	}
 
 	tableScroll := container.NewScroll(itemsTable)
+	tableScroll.SetMinSize(fyne.NewSize(0, 100))
+
+	tableSection := container.NewVBox(
+		tableScroll,
+		widget.NewSeparator(),
+		container.NewHBox(
+			layout.NewSpacer(),
+			totalLabel,
+		),
+	)
+
 	if initialFocus != "item" {
-		tableScroll.Hide()
+		tableSection.Hide()
 	}
 
 	content := container.NewBorder(
+		// TOP
 		container.NewVBox(
-			container.NewCenter(widget.NewLabelWithStyle("MENU PEMBELIAN BARANG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})),
-			container.NewCenter(widget.NewLabelWithStyle(labelText, fyne.TextAlignCenter, fyne.TextStyle{})),
+			container.NewCenter(widget.NewLabelWithStyle(
+				"MENU PEMBELIAN BARANG",
+				fyne.TextAlignCenter,
+				fyne.TextStyle{Bold: true},
+			)),
+			container.NewCenter(widget.NewLabelWithStyle(
+				labelText,
+				fyne.TextAlignCenter,
+				fyne.TextStyle{},
+			)),
 			widget.NewSeparator(),
 			headerForm,
 			headerFormSeparator,
@@ -433,7 +479,16 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			itemFormButtons,
 			itemFormSeparator,
 		),
-		buttons, nil, nil, tableScroll,
+
+		// BOTTOM  👈 buttons must be here
+		buttons,
+
+		// LEFT / RIGHT
+		nil,
+		nil,
+
+		// CENTER 👈 table + total must expand
+		tableSection,
 	)
 
 	dialogContent := container.NewPadded(content)
@@ -480,6 +535,13 @@ func showViewPembelianDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 	)
 
 	displayItems := LoadPurchaseDisplayItems(s, purchase.Details)
+
+	totalLabel := canvas.NewText(
+		"Total : "+FormatCurrency(purchase.Header.TotalAmount),
+		color.Black,
+	)
+	totalLabel.TextStyle = fyne.TextStyle{Bold: true}
+	totalLabel.Alignment = fyne.TextAlignTrailing
 
 	itemHeaders := []string{"Kode Barang", "Nama Barang", "QTY", "Harga", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -549,7 +611,14 @@ func showViewPembelianDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 			headerInfo,
 			widget.NewSeparator(),
 		),
-		container.NewCenter(closeBtn), nil, nil, container.NewScroll(itemsTable),
+		container.NewCenter(closeBtn), nil, nil, container.NewVBox(
+			container.NewScroll(itemsTable),
+			widget.NewSeparator(),
+			container.NewHBox(
+				layout.NewSpacer(),
+				totalLabel,
+			),
+		),
 	)
 
 	dialogContent := container.NewPadded(content)
@@ -577,7 +646,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	search.SetPlaceHolder("Search...")
 	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
 
-	headers := []string{"Tgl. Nota", "No. Nota", "Vendor"}
+	headers := []string{"Tgl. Nota", "No. Nota", "Vendor", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 	rowBg := color.NRGBA{R: 235, G: 235, B: 235, A: 255}
 
@@ -604,6 +673,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				TglNota: h.PurchaseDate.Format("2006-01-02"),
 				NoNota:  h.PurchaseInvoiceNum,
 				Vendor:  h.SupplierName,
+				Total:   FormatCurrency(h.TotalAmount),
 			}
 		}
 	}
@@ -650,16 +720,19 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					text.Alignment = fyne.TextAlignCenter
 				case 2:
 					text.Text = item.Vendor
-					text.Alignment = fyne.TextAlignLeading
+					text.Alignment = fyne.TextAlignCenter
+				case 3:
+					text.Text = item.Total
+					text.Alignment = fyne.TextAlignCenter
 				}
 			}
 		},
 	)
 
-	table.SetColumnWidth(0, 250)
-	table.SetColumnWidth(1, 250)
-	table.SetColumnWidth(2, 250)
-
+	table.SetColumnWidth(0, 120)
+	table.SetColumnWidth(1, 200)
+	table.SetColumnWidth(2, 240)
+	table.SetColumnWidth(3, 210)
 	var focusWrapper *focusableTable
 	safeFocus := func() {
 		if focusWrapper != nil {
@@ -677,19 +750,30 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	handleKey := func(k *fyne.KeyEvent) {
 		switch k.Name {
+
+		// New nota (header only)
 		case fyne.KeyInsert:
 			showPembelianDialog(w, s, refreshTable, "header", nil)
-		case fyne.KeyE:
+
+		// Insert / Isi Nota (detail items)
+		case fyne.KeyI:
 			if selectedRow >= 0 && selectedRow < len(data) {
 				showEditPembelianDialog(w, s, data[selectedRow].ID, refreshTable)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
-		case fyne.KeyV:
+
+		// Edit header nota
+		case fyne.KeyE:
 			if selectedRow >= 0 && selectedRow < len(data) {
-				showViewPembelianDialog(w, s, data[selectedRow].ID)
+				purchase, err := s.PurchaseRepo.GetByID(data[selectedRow].ID)
+				if err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				showPembelianDialog(w, s, refreshTable, "header", purchase)
 			} else {
-				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
 		}
 	}
@@ -706,7 +790,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	w.Canvas().SetOnTypedKey(handleKey)
 
 	tableWrapper := container.NewCenter(container.NewGridWrap(fyne.NewSize(780, 400), focusWrapper))
-	footer := canvas.NewText("[Insert] Nota Baru  [E] Isi Nota ", color.White)
+	footer := canvas.NewText("[Insert] Nota Baru  [I] Isi Nota  [E] Edit Header", color.White)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
 	content := container.NewBorder(header, footer, nil, nil, tableWrapper)

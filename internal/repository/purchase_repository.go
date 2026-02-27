@@ -29,12 +29,20 @@ func (r *PurchaseRepository) Create(purchase *models.PurchaseFull) error {
 	purchase.Header.CreatedAt = time.Now()
 
 	headerQuery := `INSERT INTO purchase_headers 
-					(id, purchase_invoice_num, purchase_date, supplier_name, created_at, created_by) 
-					VALUES ($1, $2, $3, $4, $5, $6)`
+		(id, purchase_invoice_num, purchase_date, supplier_name, total_amount, created_at, created_by) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, err = tx.Exec(headerQuery, purchase.Header.ID, purchase.Header.PurchaseInvoiceNum,
-		purchase.Header.PurchaseDate, purchase.Header.SupplierName,
-		purchase.Header.CreatedAt, purchase.Header.CreatedBy)
+	_, err = tx.Exec(
+		headerQuery,
+		purchase.Header.ID,
+		purchase.Header.PurchaseInvoiceNum,
+		purchase.Header.PurchaseDate,
+		purchase.Header.SupplierName,
+		purchase.Header.TotalAmount,
+		purchase.Header.CreatedAt,
+		purchase.Header.CreatedBy,
+	)
+	
 	if err != nil {
 		return err
 	}
@@ -84,12 +92,16 @@ func (r *PurchaseRepository) Update(purchase *models.PurchaseFull) error {
 	now := time.Now()
 	purchase.Header.UpdatedAt = &now
 	headerQuery := `UPDATE purchase_headers SET 
-					purchase_invoice_num = $1, purchase_date = $2, supplier_name = $3, 
-					updated_at = $4, updated_by = $5 
-					WHERE id = $6`
+		purchase_invoice_num = $1,
+		purchase_date        = $2,
+		supplier_name        = $3,
+		total_amount         = $4,
+		updated_at           = $5,
+		updated_by           = $6
+		WHERE id = $7`
 
 	_, err = tx.Exec(headerQuery, purchase.Header.PurchaseInvoiceNum, purchase.Header.PurchaseDate,
-		purchase.Header.SupplierName, purchase.Header.UpdatedAt,
+		purchase.Header.SupplierName, purchase.Header.TotalAmount, purchase.Header.UpdatedAt,
 		purchase.Header.UpdatedBy, purchase.Header.ID)
 	if err != nil {
 		return err
@@ -145,10 +157,10 @@ func (r *PurchaseRepository) insertDetails(tx *sqlx.Tx, header *models.PurchaseH
 
 func (r *PurchaseRepository) GetAll() ([]models.PurchaseHeader, error) {
 	var headers []models.PurchaseHeader
-	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, 
-			  created_at, updated_at, created_by, updated_by 
-			  FROM purchase_headers 
-			  ORDER BY purchase_date DESC`
+	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount,
+			created_at, updated_at, created_by, updated_by
+			FROM purchase_headers
+			ORDER BY purchase_date DESC`
 
 	err := r.db.Select(&headers, query)
 	return headers, err
@@ -158,7 +170,7 @@ func (r *PurchaseRepository) GetByID(id uuid.UUID) (*models.PurchaseFull, error)
 	var purchase models.PurchaseFull
 
 	// Get header
-	headerQuery := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, 
+	headerQuery := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount,
 					created_at, updated_at, created_by, updated_by 
 					FROM purchase_headers 
 					WHERE id = $1`
@@ -184,7 +196,7 @@ func (r *PurchaseRepository) GetByID(id uuid.UUID) (*models.PurchaseFull, error)
 
 func (r *PurchaseRepository) Search(keyword string) ([]models.PurchaseHeader, error) {
 	var headers []models.PurchaseHeader
-	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, 
+	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount, 
 			  created_at, updated_at, created_by, updated_by 
 			  FROM purchase_headers 
 			  WHERE LOWER(purchase_invoice_num) LIKE LOWER($1) 

@@ -10,6 +10,7 @@ type PurchaseHeader struct {
 	PurchaseInvoiceNum string     `db:"purchase_invoice_num"`
 	PurchaseDate       time.Time  `db:"purchase_date"`
 	SupplierName       string     `db:"supplier_name"`
+	TotalAmount        float64    `db:"total_amount"`
 	CreatedAt          time.Time  `db:"created_at"`
 	UpdatedAt          *time.Time `db:"updated_at"`
 	CreatedBy          *uuid.UUID `db:"created_by"`

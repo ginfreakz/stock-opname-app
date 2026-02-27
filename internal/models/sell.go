@@ -10,6 +10,7 @@ type SellHeader struct {
 	SellInvoiceNum string     `db:"sell_invoice_num"`
 	SellDate       time.Time  `db:"sell_date"`
 	CustomerName   string     `db:"customer_name"`
+	TotalAmount    float64    `db:"total_amount"`
 	CreatedAt      time.Time  `db:"created_at"`
 	UpdatedAt      *time.Time `db:"updated_at"`
 	CreatedBy      *uuid.UUID `db:"created_by"`
