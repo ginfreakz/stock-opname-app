@@ -165,7 +165,7 @@ func (r *SellRepository) GetByID(id uuid.UUID) (*models.SellFull, error) {
 	var sell models.SellFull
 
 	// Get header
-	headerQuery := `SELECT id, sell_invoice_num, sell_date, customer_name, 
+	headerQuery := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount,
 					created_at, updated_at, created_by, updated_by 
 					FROM sell_headers 
 					WHERE id = $1`
@@ -191,7 +191,7 @@ func (r *SellRepository) GetByID(id uuid.UUID) (*models.SellFull, error) {
 
 func (r *SellRepository) Search(keyword string) ([]models.SellHeader, error) {
 	var headers []models.SellHeader
-	query := `SELECT id, sell_invoice_num, sell_date, customer_name, 
+	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount,
 			  created_at, updated_at, created_by, updated_by 
 			  FROM sell_headers 
 			  WHERE LOWER(sell_invoice_num) LIKE LOWER($1) 
