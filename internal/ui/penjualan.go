@@ -144,7 +144,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	recalculateTotal := func() float64 {
 		var sum float64
 		for _, item := range items {
-			val, _ := strconv.ParseFloat(item.Total, 64)
+			val, _ := ParseCurrencyString(item.Total)
 			sum += val
 		}
 		totalLabel.Text = "Total : " + FormatCurrency(sum)
@@ -241,8 +241,8 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			KodeBarang: kodeBarang.Text,
 			NamaBarang: namaBarang.Text,
 			Qty:        qty.Text,
-			Harga:      fmt.Sprintf("%.0f", hargaVal),
-			Total:      fmt.Sprintf("%.0f", total),
+			Harga:      FormatCurrency(hargaVal),
+			Total:      FormatCurrency(total),
 		}
 
 		if selectedItemIndex >= 0 {
@@ -461,8 +461,8 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 		for i, item := range items {
 			qtyVal, _ := strconv.ParseFloat(item.Qty, 64)
-			hargaVal, _ := strconv.ParseFloat(item.Harga, 64)
-			totalVal, _ := strconv.ParseFloat(item.Total, 64)
+			hargaVal, _ := ParseCurrencyString(item.Harga)
+			totalVal, _ := ParseCurrencyString(item.Total)
 
 			sell.Details[i] = models.SellDetail{
 				ItemID:      item.ItemID,
@@ -505,13 +505,18 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		labelText = "Isi Nota"
 	}
 
-	tableSection := container.NewVBox(
-		container.NewScroll(itemsTable),
-		widget.NewSeparator(),
-		container.NewHBox(
-			layout.NewSpacer(),
-			totalLabel,
+	tableSection := container.NewBorder(
+		nil,
+		container.NewVBox(
+			widget.NewSeparator(),
+			container.NewHBox(
+				layout.NewSpacer(),
+				totalLabel,
+			),
 		),
+		nil,
+		nil,
+		container.NewScroll(itemsTable),
 	)
 
 	if initialFocus != "item" {
@@ -665,13 +670,18 @@ func showViewPenjualanDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 		d.Hide()
 	})
 
-	tableSection := container.NewVBox(
-		container.NewScroll(itemsTable),
-		widget.NewSeparator(),
-		container.NewHBox(
-			layout.NewSpacer(),
-			totalLabel,
+	tableSection := container.NewBorder(
+		nil,
+		container.NewVBox(
+			widget.NewSeparator(),
+			container.NewHBox(
+				layout.NewSpacer(),
+				totalLabel,
+			),
 		),
+		nil,
+		nil,
+		container.NewScroll(itemsTable),
 	)
 
 	content := container.NewBorder(

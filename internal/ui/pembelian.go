@@ -446,13 +446,18 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	tableScroll := container.NewScroll(itemsTable)
 	tableScroll.SetMinSize(fyne.NewSize(0, 100))
 
-	tableSection := container.NewVBox(
-		tableScroll,
-		widget.NewSeparator(),
-		container.NewHBox(
-			layout.NewSpacer(),
-			totalLabel,
+	tableSection := container.NewBorder(
+		nil,
+		container.NewVBox(
+			widget.NewSeparator(),
+			container.NewHBox(
+				layout.NewSpacer(),
+				totalLabel,
+			),
 		),
+		nil,
+		nil,
+		tableScroll,
 	)
 
 	if initialFocus != "item" {
@@ -611,13 +616,18 @@ func showViewPembelianDialog(w fyne.Window, s *state.Session, headerID uuid.UUID
 			headerInfo,
 			widget.NewSeparator(),
 		),
-		container.NewCenter(closeBtn), nil, nil, container.NewVBox(
-			container.NewScroll(itemsTable),
-			widget.NewSeparator(),
-			container.NewHBox(
-				layout.NewSpacer(),
-				totalLabel,
+		container.NewCenter(closeBtn), nil, nil, container.NewBorder(
+			nil,
+			container.NewVBox(
+				widget.NewSeparator(),
+				container.NewHBox(
+					layout.NewSpacer(),
+					totalLabel,
+				),
 			),
+			nil,
+			nil,
+			container.NewScroll(itemsTable),
 		),
 	)
 
