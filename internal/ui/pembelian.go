@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"image/color"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"fyne.io/fyne/v2/layout"
 
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
@@ -41,25 +42,38 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	// Header form fields
 	tglNota := widget.NewEntry()
 	tglNota.SetText(time.Now().Format("2006-01-02"))
+	tglNota.Disable() // Disable manual input
+	origDate := tglNota.Text
 
-	calendarBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		dateEntry := widget.NewEntry()
-		dateEntry.SetText(tglNota.Text)
-		dateDialog := dialog.NewCustomConfirm("Pilih Tanggal", "OK", "Cancel", container.NewVBox(widget.NewLabel("Format: YYYY-MM-DD"), dateEntry), func(ok bool) {
-			if ok {
-				tglNota.SetText(dateEntry.Text)
-			}
-		}, w)
-		dateDialog.Show()
+	dateLabel := canvas.NewText(tglNota.Text, color.Black)
+	dateLabel.TextStyle = fyne.TextStyle{Bold: true}
+	// Calendar button with calendar icon only
+	calendarBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+		ShowDatePickerDialog(w, tglNota.Text, func(selectedDate string) {
+			tglNota.SetText(selectedDate)
+			dateLabel.Text = selectedDate
+			dateLabel.Color = theme.PrimaryColor()
+			dateLabel.Refresh()
+		})
 	})
+	calendarBtn.Importance = widget.LowImportance
 
-	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
+	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, container.NewMax(tglNota, container.NewCenter(dateLabel)))
 	noNota := widget.NewEntry()
 	vendor := widget.NewEntry()
 
 	// Item entry fields
 	kodeBarang := widget.NewEntry()
-	namaBarang := widget.NewEntry()
+
+	var itemOptions []string
+	allItems, _ := s.ItemRepo.GetAll()
+	for _, it := range allItems {
+		itemOptions = append(itemOptions, fmt.Sprintf("%s - %s", it.Code, it.Name))
+	}
+
+	namaBarang := widget.NewSelectEntry(itemOptions)
+	namaBarang.PlaceHolder = "Pilih Barang..."
+
 	qty := widget.NewEntry()
 	harga := widget.NewEntry()
 
@@ -81,21 +95,82 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		selectedItemIndex = -1
 	}
 
-	kodeBarang.OnChanged = func(code string) {
-		if code == "" {
-			namaBarang.SetText("")
-			selectedItem = nil
+	isSyncing := false
+
+	namaBarang.OnChanged = func(value string) {
+		if isSyncing {
 			return
 		}
-		item, err := s.ItemRepo.GetByCode(code)
-		if err == nil {
-			namaBarang.SetText(item.Name)
-			selectedItem = item
-		} else {
-			namaBarang.SetText("Item tidak ditemukan")
-			selectedItem = nil
+
+			// always keep the select entry options in sync with our master list
+			// accessing the internal field is not allowed, so we just reset
+			// whenever the callback runs; SetOptions is cheap.
+			namaBarang.SetOptions(itemOptions)
+
+			parts := strings.SplitN(value, " - ", 2)
+			if len(parts) == 2 {
+				isSyncing = true
+				kodeBarang.SetText(parts[0])
+				isSyncing = false
+
+				item, err := s.ItemRepo.GetByCode(parts[0])
+				if err == nil {
+					selectedItem = item
+				} else {
+					selectedItem = nil
+				}
+			} else {
+				isSyncing = true
+				kodeBarang.SetText("")
+				isSyncing = false
+				selectedItem = nil
+			}
 		}
-	}
+
+		kodeBarang.OnChanged = func(code string) {
+			if isSyncing {
+				return
+			}
+
+			var filtered []string
+			if code == "" {
+				filtered = itemOptions
+			} else {
+				lowerCode := strings.ToLower(code)
+				for _, opt := range itemOptions {
+					parts := strings.SplitN(opt, " - ", 2)
+					if len(parts) == 2 {
+						if strings.Contains(strings.ToLower(parts[0]), lowerCode) {
+							filtered = append(filtered, opt)
+						}
+					}
+				}
+			}
+
+			isSyncing = true
+			namaBarang.SetOptions(filtered)
+			isSyncing = false
+
+			if code == "" {
+				isSyncing = true
+				namaBarang.SetText("")
+				isSyncing = false
+				selectedItem = nil
+				return
+			}
+			item, err := s.ItemRepo.GetByCode(code)
+			if err == nil {
+				isSyncing = true
+				namaBarang.SetText(fmt.Sprintf("%s - %s", item.Code, item.Name))
+				isSyncing = false
+				selectedItem = item
+			} else {
+				isSyncing = true
+				namaBarang.SetText("")
+				isSyncing = false
+				selectedItem = nil
+			}
+		}
 
 	var items []PembelianItem
 	var itemsTable *widget.Table
@@ -121,8 +196,13 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	}
 
 	if existingData != nil {
-		tglNota.SetText(existingData.Header.PurchaseDate.Format("2006-01-02"))
+		formattedDate := existingData.Header.PurchaseDate.Format("2006-01-02")
+		tglNota.SetText(formattedDate)
+		dateLabel.Text = formattedDate
+		dateLabel.Color = color.Black
+		dateLabel.Refresh()
 		noNota.SetText(existingData.Header.PurchaseInvoiceNum)
+		origDate = formattedDate
 		vendor.SetText(existingData.Header.SupplierName)
 
 		displayItems := LoadPurchaseDisplayItems(s, existingData.Details)
@@ -426,6 +506,12 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
+		// mark blue if date changed on save
+		if origDate != tglNota.Text {
+			dateLabel.Color = theme.PrimaryColor()
+			dateLabel.Refresh()
+		}
+
 		ShowSuccessToast("Success", "Data pembelian berhasil disimpan!", w)
 		d.Hide()
 		if refreshCallback != nil {
@@ -653,7 +739,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	title.TextSize = 16
 
 	search := widget.NewEntry()
-	search.SetPlaceHolder("Search...")
+	search.SetPlaceHolder("Search No. Nota or Vendor...")
 	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
 
 	headers := []string{"Tgl. Nota", "No. Nota", "Vendor", "Total"}
@@ -743,6 +829,14 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(1, 200)
 	table.SetColumnWidth(2, 240)
 	table.SetColumnWidth(3, 210)
+
+	// enable live searching
+	search.OnChanged = func(keyword string) {
+		selectedRow = -1
+		loadData(keyword)
+		table.Refresh()
+	}
+
 	var focusWrapper *focusableTable
 	safeFocus := func() {
 		if focusWrapper != nil {
@@ -784,6 +878,64 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				showPembelianDialog(w, s, refreshTable, "header", purchase)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
+		case fyne.KeyUp:
+			if len(data) > 0 {
+				if selectedRow > 0 {
+					selectedRow--
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyDown:
+			if len(data) > 0 {
+				if selectedRow < len(data)-1 {
+					selectedRow++
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyHome:
+			if len(data) > 0 {
+				selectedRow = 0
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: 1, Col: 0})
+			}
+		case fyne.KeyEnd:
+			if len(data) > 0 {
+				selectedRow = len(data) - 1
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageUp:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow -= 10
+					if selectedRow < 0 {
+						selectedRow = 0
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageDown:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow += 10
+					if selectedRow >= len(data) {
+						selectedRow = len(data) - 1
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
 			}
 		}
 	}
