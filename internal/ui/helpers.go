@@ -50,7 +50,9 @@ func ShowSuccessToast(title, message string, w fyne.Window) {
 	info := dialog.NewInformation(title, message, w)
 	info.Show()
 	time.AfterFunc(1*time.Second, func() {
-		info.Hide()
+		fyne.Do(func() {
+			info.Hide()
+		})
 	})
 }
 

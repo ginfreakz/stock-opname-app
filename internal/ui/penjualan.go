@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"image/color"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"fyne.io/fyne/v2/layout"
 
 	"fyne-app/internal/models"
 	"fyne-app/internal/state"
@@ -46,42 +47,41 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	// Header form fields
 	tglNota := widget.NewEntry()
 	tglNota.SetText(time.Now().Format("2006-01-02"))
-	tglNota.OnSubmitted = func(s string) {
-		// No manual focus control for tglNota since it's in a border with calendarBtn
-	}
+	// disable the entry so user can't type or select
+	tglNota.Disable()
+	origDate := tglNota.Text
 
-	// Calendar button
-	calendarBtn := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() {
-		dateEntry := widget.NewEntry()
-		dateEntry.SetText(tglNota.Text)
-		dateEntry.SetPlaceHolder("YYYY-MM-DD")
+	// overlay canvas text for bold (and later colored) date display
+	dateLabel := canvas.NewText(tglNota.Text, color.Black)
+	dateLabel.TextStyle = fyne.TextStyle{Bold: true} // start bold
 
-		dateDialog := dialog.NewCustomConfirm(
-			"Pilih Tanggal",
-			"OK",
-			"Cancel",
-			container.NewVBox(
-				widget.NewLabel("Format: YYYY-MM-DD"),
-				dateEntry,
-			),
-			func(ok bool) {
-				if ok {
-					tglNota.SetText(dateEntry.Text)
-				}
-			},
-			w,
-		)
-		dateDialog.Show()
+	// Calendar button with calendar icon only
+	calendarBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+		ShowDatePickerDialog(w, tglNota.Text, func(selectedDate string) {
+			tglNota.SetText(selectedDate)
+			dateLabel.Text = selectedDate
+			dateLabel.Refresh()
+		})
 	})
+	calendarBtn.Importance = widget.LowImportance
 
-	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
+	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, container.NewMax(tglNota, container.NewCenter(dateLabel)))
 
 	noNota := widget.NewEntry()
 	customer := widget.NewEntry()
 
 	// Item entry fields
 	kodeBarang := widget.NewEntry()
-	namaBarang := widget.NewEntry()
+
+	var itemOptions []string
+	allItems, _ := s.ItemRepo.GetAll()
+	for _, it := range allItems {
+		itemOptions = append(itemOptions, fmt.Sprintf("%s - %s", it.Code, it.Name))
+	}
+
+	namaBarang := widget.NewSelectEntry(itemOptions)
+	namaBarang.PlaceHolder = "Pilih Barang..."
+
 	qty := widget.NewEntry()
 
 	// Focus flow
@@ -115,20 +115,76 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		selectedItemIndex = -1
 	}
 
+	isSyncing := false
+
+	namaBarang.OnChanged = func(value string) {
+		if isSyncing {
+			return
+		}
+
+		parts := strings.SplitN(value, " - ", 2)
+		if len(parts) == 2 {
+			isSyncing = true
+			kodeBarang.SetText(parts[0])
+			isSyncing = false
+
+			item, err := s.ItemRepo.GetByCode(parts[0])
+			if err == nil {
+				selectedItem = item
+			} else {
+				selectedItem = nil
+			}
+		} else {
+			isSyncing = true
+			kodeBarang.SetText("")
+			isSyncing = false
+			selectedItem = nil
+		}
+	}
+
 	// Kode barang lookup
 	kodeBarang.OnChanged = func(code string) {
+		if isSyncing {
+			return
+		}
+
+		var filtered []string
 		if code == "" {
+			filtered = itemOptions
+		} else {
+			lowerCode := strings.ToLower(code)
+			for _, opt := range itemOptions {
+				parts := strings.SplitN(opt, " - ", 2)
+				if len(parts) == 2 {
+					if strings.Contains(strings.ToLower(parts[0]), lowerCode) {
+						filtered = append(filtered, opt)
+					}
+				}
+			}
+		}
+
+		isSyncing = true
+		namaBarang.SetOptions(filtered)
+		isSyncing = false
+
+		if code == "" {
+			isSyncing = true
 			namaBarang.SetText("")
+			isSyncing = false
 			selectedItem = nil
 			return
 		}
 
 		item, err := s.ItemRepo.GetByCode(code)
 		if err == nil {
-			namaBarang.SetText(item.Name)
+			isSyncing = true
+			namaBarang.SetText(fmt.Sprintf("%s - %s", item.Code, item.Name))
+			isSyncing = false
 			selectedItem = item
 		} else {
-			namaBarang.SetText("Item tidak ditemukan")
+			isSyncing = true
+			namaBarang.SetText("")
+			isSyncing = false
 			selectedItem = nil
 		}
 	}
@@ -154,8 +210,14 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	// Populate if existing
 	if existingData != nil {
-		tglNota.SetText(existingData.Header.SellDate.Format("2006-01-02"))
+		formattedDate := existingData.Header.SellDate.Format("2006-01-02")
+		tglNota.SetText(formattedDate)
+		// also keep label in sync using default color
+		dateLabel.Text = formattedDate
+		dateLabel.Color = color.Black
+		dateLabel.Refresh()
 		noNota.SetText(existingData.Header.SellInvoiceNum)
+		origDate = formattedDate
 		customer.SetText(existingData.Header.CustomerName)
 
 		displayItems := LoadSellDisplayItems(s, existingData.Details)
@@ -484,6 +546,12 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
+		// if date changed from original, mark blue
+		if origDate != tglNota.Text {
+			dateLabel.Color = theme.PrimaryColor()
+			dateLabel.Refresh()
+		}
+
 		ShowSuccessToast("Success", "Data penjualan berhasil disimpan!", w)
 		d.Hide()
 
@@ -726,7 +794,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	title.TextSize = 16
 
 	search := widget.NewEntry()
-	search.SetPlaceHolder("Search...")
+	search.SetPlaceHolder("Search No. Nota or Customer...")
 
 	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
 
@@ -769,6 +837,8 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Initial load
 	loadData("")
+
+	// After initial load we will bind the search field once the table is created
 
 	// Table
 	table := widget.NewTable(
@@ -832,14 +902,26 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(2, 240)
 	table.SetColumnWidth(3, 210)
 
+	// focus helpers (re-used in many pages)
 	var focusWrapper *focusableTable
-
 	safeFocus := func() {
 		if focusWrapper != nil {
 			fyne.Do(func() {
 				w.Canvas().Focus(focusWrapper)
 			})
 		}
+	}
+
+	// hook up search after table exists
+	search.OnChanged = func(keyword string) {
+		selectedRow = -1
+		loadData(keyword)
+		table.Refresh()
+	}
+	if focusWrapper != nil {
+		fyne.Do(func() {
+			w.Canvas().Focus(focusWrapper)
+		})
 	}
 
 	// Refresh function
@@ -876,6 +958,64 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				showPenjualanDialog(w, s, refreshTable, "header", sell)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
+		case fyne.KeyUp:
+			if len(data) > 0 {
+				if selectedRow > 0 {
+					selectedRow--
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyDown:
+			if len(data) > 0 {
+				if selectedRow < len(data)-1 {
+					selectedRow++
+				} else if selectedRow == -1 {
+					selectedRow = 0
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyHome:
+			if len(data) > 0 {
+				selectedRow = 0
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: 1, Col: 0})
+			}
+		case fyne.KeyEnd:
+			if len(data) > 0 {
+				selectedRow = len(data) - 1
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageUp:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow -= 10
+					if selectedRow < 0 {
+						selectedRow = 0
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
+			}
+		case fyne.KeyPageDown:
+			if len(data) > 0 {
+				if selectedRow == -1 {
+					selectedRow = 0
+				} else {
+					selectedRow += 10
+					if selectedRow >= len(data) {
+						selectedRow = len(data) - 1
+					}
+				}
+				table.Refresh()
+				table.ScrollTo(widget.TableCellID{Row: selectedRow + 1, Col: 0})
 			}
 		}
 	}
