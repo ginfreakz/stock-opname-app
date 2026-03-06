@@ -48,9 +48,9 @@ func (r *ItemRepository) GetByCode(code string) (*models.Item, error) {
 	query := `SELECT id, code, name, qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
-			  WHERE code = $1 AND deleted_at IS NULL`
+			  WHERE (UPPER(code) ILIKE UPPER($1) OR UPPER(name) ILIKE UPPER($1)) AND deleted_at IS NULL`
 	
-	err := r.db.Get(&item, query, code)
+	err := r.db.Get(&item, query, "%"+code+"%")
 	if err != nil {
 		return nil, err
 	}
