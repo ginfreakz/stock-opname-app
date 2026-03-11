@@ -15,6 +15,7 @@ type Session struct {
 	ItemRepo           *repository.ItemRepository
 	PurchaseRepo       *repository.PurchaseRepository
 	SellRepo           *repository.SellRepository
+	ReturRepo          *repository.ReturRepository
 }
 
 func NewSession(db *sqlx.DB) *Session {
@@ -24,5 +25,6 @@ func NewSession(db *sqlx.DB) *Session {
 		ItemRepo:     repository.NewItemRepository(db),
 		PurchaseRepo: repository.NewPurchaseRepository(db),
 		SellRepo:     repository.NewSellRepository(db),
+		ReturRepo:    repository.NewReturRepository(db),
 	}
 }

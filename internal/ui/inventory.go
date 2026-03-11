@@ -210,7 +210,6 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	backBtn := widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() {
 		w.SetContent(HomePage(w, s))
 	})
-	backBtn.Importance = widget.LowImportance
 
 	title := canvas.NewText("MENU INVENTORY / OPNAME", color.White)
 	title.Alignment = fyne.TextAlignCenter
@@ -262,7 +261,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				Code:  item.Code,
 				Name:  item.Name,
 				Qty:   fmt.Sprintf("%.0f", item.Qty),
-				Price: FormatCurrency(item.Price),
+				Price: fmt.Sprintf("%.0f", item.Price),
 			}
 		}
 	}
@@ -368,9 +367,9 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// ===== COLUMN WIDTH =====
 	table.SetColumnWidth(0, 150)
-	table.SetColumnWidth(1, 350)
+	table.SetColumnWidth(1, 450)
 	table.SetColumnWidth(2, 120)
-	table.SetColumnWidth(3, 160)
+	table.SetColumnWidth(3, 210)
 
 	// Search functionality
 	search.OnChanged = func(keyword string) {
@@ -380,16 +379,20 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	// ===== KEY HANDLER =====
+	var lastDialogTime time.Time
+	
 	handleKey := func(k *fyne.KeyEvent) {
-		if dialogOpen {
+		if dialogOpen || time.Since(lastDialogTime) < 500*time.Millisecond {
 			return
 		}
 
 		switch k.Name {
 		case fyne.KeyInsert:
+			lastDialogTime = time.Now()
 			dialogOpen = true
 			showAddInventoryDialog(w, s, &dialogOpen, refreshTable)
 		case fyne.KeyE:
+			lastDialogTime = time.Now()
 			if selectedRow >= 0 && selectedRow < len(data) {
 				dialogOpen = true
 				showEditInventoryDialog(w, s, data[selectedRow], &dialogOpen, refreshTable)
@@ -397,6 +400,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				dialog.ShowInformation("Info", "Pilih data terlebih dahulu!", w)
 			}
 		case fyne.KeyDelete:
+			lastDialogTime = time.Now()
 			if selectedRow >= 0 && selectedRow < len(data) {
 				dialogOpen = true
 				selectedItem := data[selectedRow]
@@ -495,7 +499,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// ===== CENTERED TABLE WRAPPER =====
 	tableWrapper := container.NewCenter(
 		container.NewGridWrap(
-			fyne.NewSize(800, 400),
+			fyne.NewSize(950, 480),
 			focusWrapper,
 		),
 	)
@@ -514,7 +518,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	rect.CornerRadius = 12
 	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
 	rect.StrokeWidth = 1
-	rect.SetMinSize(fyne.NewSize(980, 560))
+	rect.SetMinSize(fyne.NewSize(1050, 650))
 
 	// Stack content on top of the background rectangle with padding
 	panel := container.NewMax(

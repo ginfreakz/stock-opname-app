@@ -115,3 +115,33 @@ func LoadSellDisplayItems(s *state.Session, details []models.SellDetail) []Displ
 
 	return items
 }
+
+// LoadReturDisplayItems loads retur items with full item information
+func LoadReturDisplayItems(s *state.Session, details []models.ReturDetail) []DisplayItem {
+	items := make([]DisplayItem, len(details))
+
+	for i, detail := range details {
+		item, err := s.ItemRepo.GetByID(detail.ItemID)
+
+		if err != nil {
+			// Fallback if item not found
+			items[i] = DisplayItem{
+				Code:  "N/A",
+				Name:  "Item tidak ditemukan",
+				Qty:   fmt.Sprintf("%.0f", detail.Qty),
+				Price: FormatCurrency(detail.PriceAmount),
+				Total: FormatCurrency(detail.TotalAmount),
+			}
+		} else {
+			items[i] = DisplayItem{
+				Code:  item.Code,
+				Name:  item.Name,
+				Qty:   fmt.Sprintf("%.0f", detail.Qty),
+				Price: FormatCurrency(detail.PriceAmount),
+				Total: FormatCurrency(detail.TotalAmount),
+			}
+		}
+	}
+
+	return items
+}
