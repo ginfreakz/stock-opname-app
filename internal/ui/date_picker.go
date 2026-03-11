@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -39,7 +40,8 @@ func ShowDatePickerDialog(w fyne.Window, currentDate string, onSelected func(str
 	calendarGrid := container.NewVBox()
 
 	// Function to render the calendar
-	renderCalendar := func(date time.Time) {
+	var renderCalendar func(date time.Time)
+	renderCalendar = func(date time.Time) {
 		calendarGrid.RemoveAll()
 		monthYear.SetText(date.Format("January 2006"))
 
@@ -72,6 +74,7 @@ func ShowDatePickerDialog(w fyne.Window, currentDate string, onSelected func(str
 			btn := widget.NewButton(fmt.Sprintf("%d", d), func() {
 				selectedDate = monthDate
 				onSelected(monthDate.Format("2006-01-02"))
+				renderCalendar(selectedDate) // Re-render to update the blue highlight
 			})
 
 			// Only highlight the currently selected date
@@ -115,14 +118,31 @@ func ShowDatePickerDialog(w fyne.Window, currentDate string, onSelected func(str
 	)
 
 	// Dialog
-	d := dialog.NewCustomConfirm(
-		"Pilih Tanggal",
-		"Tutup",
-		"",
+	var d dialog.Dialog
+
+	closeBtn := widget.NewButtonWithIcon("Tutup", theme.ConfirmIcon(), func() {
+		d.Hide()
+	})
+	closeBtn.Importance = widget.HighImportance
+
+	// Add spacing above the button
+	btnContainer := container.NewCenter(
+		container.NewPadded(closeBtn),
+	)
+
+	contentWithBtn := container.NewVBox(
 		content,
-		func(bool) {},
+		widget.NewLabel(""), // Spacer
+		btnContainer,
+	)
+
+	d = dialog.NewCustom(
+		"Pilih Tanggal",
+		"",
+		contentWithBtn,
 		w,
 	)
-	d.Resize(fyne.NewSize(400, 350))
+
+	d.Resize(fyne.NewSize(400, 400))
 	d.Show()
 }

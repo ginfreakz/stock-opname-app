@@ -17,6 +17,21 @@ func NewPurchaseRepository(db *sqlx.DB) *PurchaseRepository {
 	return &PurchaseRepository{db: db}
 }
 
+// GetByInvoiceNum retrieves a Purchase header by its invoice number
+func (r *PurchaseRepository) GetByInvoiceNum(invoiceNum string) (*models.PurchaseHeader, error) {
+	var header models.PurchaseHeader
+	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount, 
+			  status, created_at, updated_at, created_by, updated_by 
+			  FROM purchase_headers 
+			  WHERE purchase_invoice_num = $1`
+
+	err := r.db.Get(&header, query, invoiceNum)
+	if err != nil {
+		return nil, err // Return error (typically sql.ErrNoRows if not found)
+	}
+	return &header, nil
+}
+
 func (r *PurchaseRepository) Create(purchase *models.PurchaseFull) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
@@ -29,8 +44,8 @@ func (r *PurchaseRepository) Create(purchase *models.PurchaseFull) error {
 	purchase.Header.CreatedAt = time.Now()
 
 	headerQuery := `INSERT INTO purchase_headers 
-		(id, purchase_invoice_num, purchase_date, supplier_name, total_amount, created_at, created_by) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+		(id, purchase_invoice_num, purchase_date, supplier_name, total_amount, status, created_at, created_by) 
+		VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7)`
 
 	_, err = tx.Exec(
 		headerQuery,
@@ -42,7 +57,7 @@ func (r *PurchaseRepository) Create(purchase *models.PurchaseFull) error {
 		purchase.Header.CreatedAt,
 		purchase.Header.CreatedBy,
 	)
-	
+
 	if err != nil {
 		return err
 	}
@@ -158,7 +173,7 @@ func (r *PurchaseRepository) insertDetails(tx *sqlx.Tx, header *models.PurchaseH
 func (r *PurchaseRepository) GetAll() ([]models.PurchaseHeader, error) {
 	var headers []models.PurchaseHeader
 	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount,
-			created_at, updated_at, created_by, updated_by
+			status, created_at, updated_at, created_by, updated_by
 			FROM purchase_headers
 			ORDER BY purchase_date DESC`
 
@@ -171,7 +186,7 @@ func (r *PurchaseRepository) GetByID(id uuid.UUID) (*models.PurchaseFull, error)
 
 	// Get header
 	headerQuery := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount,
-					created_at, updated_at, created_by, updated_by 
+					status, created_at, updated_at, created_by, updated_by 
 					FROM purchase_headers 
 					WHERE id = $1`
 
@@ -197,7 +212,7 @@ func (r *PurchaseRepository) GetByID(id uuid.UUID) (*models.PurchaseFull, error)
 func (r *PurchaseRepository) Search(keyword string) ([]models.PurchaseHeader, error) {
 	var headers []models.PurchaseHeader
 	query := `SELECT id, purchase_invoice_num, purchase_date, supplier_name, total_amount, 
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM purchase_headers 
 			  WHERE LOWER(purchase_invoice_num) LIKE LOWER($1) 
 			  OR LOWER(supplier_name) LIKE LOWER($1)
@@ -206,4 +221,52 @@ func (r *PurchaseRepository) Search(keyword string) ([]models.PurchaseHeader, er
 	searchPattern := "%" + keyword + "%"
 	err := r.db.Select(&headers, query, searchPattern)
 	return headers, err
+}
+
+// Void membatalkan transaksi pembelian secara soft-delete
+func (r *PurchaseRepository) Void(id uuid.UUID, updatedBy uuid.UUID) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Dapatkan detail item yang dibeli
+	var details []models.PurchaseDetail
+	err = tx.Select(&details, `SELECT item_id, qty FROM purchase_details WHERE header_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Kembalikan stok (kurangi stok gudang karena pembelian batal)
+	for _, d := range details {
+		_, err = tx.Exec(`UPDATE items SET qty = qty - $1 WHERE id = $2`, d.Qty, d.ItemID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 3. Catat mutasi pembatalan
+	now := time.Now()
+	period := now.Format("2006-01")
+	for _, d := range details {
+		mutationID := uuid.New()
+		mutationQuery := `INSERT INTO stock_mutations 
+						  (id, item_id, period, trx_date, qty, model_id, model_type, created_at) 
+						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+		// qty diset negatif karena membatalkan pembelian
+		_, err = tx.Exec(mutationQuery, mutationID, d.ItemID, period, now, -d.Qty, id, "void_purchase", now)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 4. Update status header menjadi VOID
+	_, err = tx.Exec(`UPDATE purchase_headers SET status = 'VOID', updated_at = $1, updated_by = $2 WHERE id = $3 AND status != 'VOID'`, now, updatedBy, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

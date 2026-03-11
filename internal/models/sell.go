@@ -1,8 +1,8 @@
 package models
 
 import (
-	"time"
 	"github.com/google/uuid"
+	"time"
 )
 
 type SellHeader struct {
@@ -15,6 +15,7 @@ type SellHeader struct {
 	UpdatedAt      *time.Time `db:"updated_at"`
 	CreatedBy      *uuid.UUID `db:"created_by"`
 	UpdatedBy      *uuid.UUID `db:"updated_by"`
+	Status         string     `db:"status"`
 }
 
 type SellDetail struct {

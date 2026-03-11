@@ -127,3 +127,67 @@ CREATE TABLE public.sell_details (
   CONSTRAINT sell_details_header_id_foreign FOREIGN KEY (header_id) REFERENCES public.sell_headers(id) ON DELETE CASCADE,
   CONSTRAINT sell_details_item_id_foreign FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE
 );
+
+-- # Table: retur_headers
+
+-- DROP TABLE public.retur_headers;
+
+CREATE TABLE public.retur_headers (
+
+	id uuid NOT NULL,
+
+  retur_invoice_num varchar(255) NOT NULL,
+
+  retur_date date NOT NULL,
+
+  supplier_name varchar(255) NOT NULL,
+
+  total_amount float DEFAULT 0 NOT NULL,
+
+  created_at timestamp(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+	updated_at timestamp(0) NULL,
+
+  created_by uuid NULL,
+
+  updated_by uuid NULL,
+
+  CONSTRAINT retur_headers_pkey PRIMARY KEY (id),
+
+  CONSTRAINT retur_headers_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL,
+
+  CONSTRAINT retur_headers_updated_by_foreign FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL
+
+);
+
+
+
+-- # Table: retur_details
+
+-- DROP TABLE public.retur_details;
+
+CREATE TABLE public.retur_details (
+
+	id uuid NOT NULL,
+
+  header_id uuid NOT NULL,
+
+  item_id uuid NOT NULL,
+
+  qty float NOT NULL,
+
+  price_amount float NOT NULL,
+
+  total_amount float NOT NULL,
+
+  created_at timestamp(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  updated_at timestamp(0) NULL,
+
+  CONSTRAINT retur_details_pkey PRIMARY KEY (id),
+
+  CONSTRAINT retur_details_header_id_foreign FOREIGN KEY (header_id) REFERENCES public.retur_headers(id) ON DELETE CASCADE,
+
+  CONSTRAINT retur_details_item_id_foreign FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE
+
+);
