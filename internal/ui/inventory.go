@@ -380,7 +380,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// ===== KEY HANDLER =====
 	var lastDialogTime time.Time
-	
+
 	handleKey := func(k *fyne.KeyEvent) {
 		if dialogOpen || time.Since(lastDialogTime) < 500*time.Millisecond {
 			return

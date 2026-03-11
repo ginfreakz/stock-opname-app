@@ -7,15 +7,15 @@ import (
 )
 
 type Session struct {
-	IsLoggedIn         bool
-	Username           string
-	User               *models.User
-	DB                 *sqlx.DB
-	UserRepo           *repository.UserRepository
-	ItemRepo           *repository.ItemRepository
-	PurchaseRepo       *repository.PurchaseRepository
-	SellRepo           *repository.SellRepository
-	ReturRepo          *repository.ReturRepository
+	IsLoggedIn   bool
+	Username     string
+	User         *models.User
+	DB           *sqlx.DB
+	UserRepo     *repository.UserRepository
+	ItemRepo     *repository.ItemRepository
+	PurchaseRepo *repository.PurchaseRepository
+	SellRepo     *repository.SellRepository
+	ReturRepo    *repository.ReturRepository
 }
 
 func NewSession(db *sqlx.DB) *Session {

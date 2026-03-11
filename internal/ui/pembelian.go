@@ -27,6 +27,7 @@ type PembelianHeader struct {
 	NoNota  string
 	Vendor  string
 	Total   string
+	Status  string
 }
 
 type PembelianItem struct {
@@ -111,89 +112,89 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
-			// always keep the select entry options in sync with our master list
-			// accessing the internal field is not allowed, so we just reset
-			// whenever the callback runs; SetOptions is cheap.
-			namaBarang.SetOptions(itemOptions)
+		// always keep the select entry options in sync with our master list
+		// accessing the internal field is not allowed, so we just reset
+		// whenever the callback runs; SetOptions is cheap.
+		namaBarang.SetOptions(itemOptions)
 
-			parts := strings.SplitN(value, " - ", 2)
-			if len(parts) == 2 {
-				isSyncing = true
-				kodeBarang.SetText(parts[0])
-				isSyncing = false
-
-				item, err := s.ItemRepo.GetByCode(parts[0])
-				if err == nil {
-					selectedItem = item
-					stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty)
-				} else {
-					selectedItem = nil
-					stockInfo.Text = ""
-				}
-				stockWarning.Text = ""
-				stockInfo.Refresh()
-				stockWarning.Refresh()
-			} else {
-				isSyncing = true
-				kodeBarang.SetText("")
-				isSyncing = false
-				selectedItem = nil
-				stockInfo.Text = ""
-				stockWarning.Text = ""
-				stockInfo.Refresh()
-				stockWarning.Refresh()
-			}
-		}
-
-		kodeBarang.OnChanged = func(code string) {
-			if isSyncing {
-				return
-			}
-
-			var filtered []string
-			if code == "" {
-				filtered = itemOptions
-			} else {
-				lowerCode := strings.ToLower(code)
-				for _, opt := range itemOptions {
-					parts := strings.SplitN(opt, " - ", 2)
-					if len(parts) == 2 {
-						if strings.Contains(strings.ToLower(parts[0]), lowerCode) {
-							filtered = append(filtered, opt)
-						}
-					}
-				}
-			}
-
+		parts := strings.SplitN(value, " - ", 2)
+		if len(parts) == 2 {
 			isSyncing = true
-			namaBarang.SetOptions(filtered)
+			kodeBarang.SetText(parts[0])
 			isSyncing = false
 
-			if code == "" {
-				isSyncing = true
-				namaBarang.SetText("")
-				isSyncing = false
-				selectedItem = nil
-				return
-			}
-			item, err := s.ItemRepo.GetByCode(code)
+			item, err := s.ItemRepo.GetByCode(parts[0])
 			if err == nil {
-				isSyncing = true
-				namaBarang.SetText(fmt.Sprintf("%s - %s", item.Code, item.Name))
-				isSyncing = false
 				selectedItem = item
 				stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty)
 			} else {
-				isSyncing = true
-				namaBarang.SetText("")
-				isSyncing = false
 				selectedItem = nil
 				stockInfo.Text = ""
 			}
 			stockWarning.Text = ""
 			stockInfo.Refresh()
 			stockWarning.Refresh()
+		} else {
+			isSyncing = true
+			kodeBarang.SetText("")
+			isSyncing = false
+			selectedItem = nil
+			stockInfo.Text = ""
+			stockWarning.Text = ""
+			stockInfo.Refresh()
+			stockWarning.Refresh()
 		}
+	}
+
+	kodeBarang.OnChanged = func(code string) {
+		if isSyncing {
+			return
+		}
+
+		var filtered []string
+		if code == "" {
+			filtered = itemOptions
+		} else {
+			lowerCode := strings.ToLower(code)
+			for _, opt := range itemOptions {
+				parts := strings.SplitN(opt, " - ", 2)
+				if len(parts) == 2 {
+					if strings.Contains(strings.ToLower(parts[0]), lowerCode) {
+						filtered = append(filtered, opt)
+					}
+				}
+			}
+		}
+
+		isSyncing = true
+		namaBarang.SetOptions(filtered)
+		isSyncing = false
+
+		if code == "" {
+			isSyncing = true
+			namaBarang.SetText("")
+			isSyncing = false
+			selectedItem = nil
+			return
+		}
+		item, err := s.ItemRepo.GetByCode(code)
+		if err == nil {
+			isSyncing = true
+			namaBarang.SetText(fmt.Sprintf("%s - %s", item.Code, item.Name))
+			isSyncing = false
+			selectedItem = item
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty)
+		} else {
+			isSyncing = true
+			namaBarang.SetText("")
+			isSyncing = false
+			selectedItem = nil
+			stockInfo.Text = ""
+		}
+		stockWarning.Text = ""
+		stockInfo.Refresh()
+		stockWarning.Refresh()
+	}
 
 	qty.OnChanged = func(val string) {
 		if selectedItem != nil {
@@ -205,12 +206,12 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			// Let's just put info and warning logic. If the user wants a warning in Pembelian? Maybe not for "Stok kurang!" since we are adding stock.
 			// The user just said "warning yang kayak sebelumnya".
 			if err == nil {
-				// We don't necessarily warn about "qty > stock" in pembelian, but maybe something else? 
+				// We don't necessarily warn about "qty > stock" in pembelian, but maybe something else?
 				// I'll leave the red text empty for now unless it's negative.
 				if v < 0 {
-				    stockWarning.Text = "Qty minus!"
+					stockWarning.Text = "Qty minus!"
 				} else {
-				    stockWarning.Text = ""
+					stockWarning.Text = ""
 				}
 			} else {
 				stockWarning.Text = ""
@@ -268,7 +269,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 				Total:      v.Total,
 			}
 		}
-		
+
 		// Lock header inputs
 		tglNota.Disable()
 		noNota.Disable()
@@ -521,6 +522,16 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			dialog.ShowInformation("Error", "Header data harus diisi!", w)
 			return
 		}
+
+		if existingData == nil {
+			// Validasi No Nota duplikat
+			existing, _ := s.PurchaseRepo.GetByInvoiceNum(noNota.Text)
+			if existing != nil {
+				dialog.ShowInformation("Error", "No. Nota sudah terdaftar, silakan gunakan nomor lain!", w)
+				return
+			}
+		}
+
 		// Validate item counts (prevent empty nota)
 		if len(items) == 0 {
 			dialog.ShowInformation("Error", "Minimal 1 item harus ditambahkan!", w)
@@ -588,9 +599,9 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	cancelBtn := widget.NewButton("Cancel", func() { d.Hide() })
 	cancelBtn.Importance = widget.DangerImportance
-	
+
 	var buttons *fyne.Container
-	
+
 	if existingData != nil {
 		cancelBtn.SetText("Tutup")
 		cancelBtn.Importance = widget.HighImportance
@@ -846,6 +857,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				NoNota:  h.PurchaseInvoiceNum,
 				Vendor:  h.SupplierName,
 				Total:   FormatCurrency(h.TotalAmount),
+				Status:  h.Status,
 			}
 		}
 	}
@@ -883,12 +895,24 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			text.TextStyle = fyne.TextStyle{}
 			if id.Row-1 < len(data) {
 				item := data[id.Row-1]
+
+				// Red text indicating VOID for all columns
+				if item.Status == "VOID" {
+					if id.Row-1 != selectedRow {
+						text.Color = color.NRGBA{R: 220, G: 50, B: 50, A: 255}
+					}
+				}
+
 				switch id.Col {
 				case 0:
 					text.Text = item.TglNota
 					text.Alignment = fyne.TextAlignCenter
 				case 1:
-					text.Text = item.NoNota
+					if item.Status == "VOID" {
+						text.Text = item.NoNota + " [VOID]"
+					} else {
+						text.Text = item.NoNota
+					}
 					text.Alignment = fyne.TextAlignCenter
 				case 2:
 					text.Text = item.Vendor
@@ -934,7 +958,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		if time.Since(lastDialogTime) < 500*time.Millisecond {
 			return
 		}
-		
+
 		switch k.Name {
 
 		// New nota
@@ -955,6 +979,34 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
+		case fyne.KeyDelete:
+			lastDialogTime = time.Now()
+			if selectedRow >= 0 && selectedRow < len(data) {
+				selectedID := data[selectedRow].ID
+				selectedStatus := data[selectedRow].Status
+
+				if selectedStatus == "VOID" {
+					dialog.ShowInformation("Info", "Nota ini sudah berstatus VOID!", w)
+					return
+				}
+
+				dialog.ShowConfirm("Void Nota Pembelian",
+					"Apakah Anda yakin ingin melakukan VOID pada nota ini?\n\nAksi ini akan memutarbalikan stok barang yang sudah dibeli dan mengubah status nota menjadi VOID.",
+					func(b bool) {
+						if b {
+							err := s.PurchaseRepo.Void(selectedID, s.User.ID)
+							if err != nil {
+								dialog.ShowError(err, w)
+							} else {
+								dialog.ShowInformation("Sukses", "Nota berhasil di-Void!", w)
+								refreshTable()
+							}
+						}
+					}, w)
+			} else {
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu sebelum di-Void!", w)
+			}
+
 		case fyne.KeyUp:
 			if len(data) > 0 {
 				if selectedRow > 0 {
@@ -1028,7 +1080,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	w.Canvas().SetOnTypedKey(handleKey)
 
 	tableWrapper := container.NewCenter(container.NewGridWrap(fyne.NewSize(950, 480), focusWrapper))
-	footer := canvas.NewText("[Insert] Nota Baru  [V] Preview Nota", color.White)
+	footer := canvas.NewText("[Insert] Nota Baru  [V] Preview Nota  [Del] Void", color.White)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
 	content := container.NewBorder(header, footer, nil, nil, tableWrapper)

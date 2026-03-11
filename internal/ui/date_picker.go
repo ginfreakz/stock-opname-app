@@ -119,7 +119,7 @@ func ShowDatePickerDialog(w fyne.Window, currentDate string, onSelected func(str
 
 	// Dialog
 	var d dialog.Dialog
-	
+
 	closeBtn := widget.NewButtonWithIcon("Tutup", theme.ConfirmIcon(), func() {
 		d.Hide()
 	})
@@ -142,7 +142,7 @@ func ShowDatePickerDialog(w fyne.Window, currentDate string, onSelected func(str
 		contentWithBtn,
 		w,
 	)
-	
+
 	d.Resize(fyne.NewSize(400, 400))
 	d.Show()
 }

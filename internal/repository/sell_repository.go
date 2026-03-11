@@ -17,6 +17,26 @@ func NewSellRepository(db *sqlx.DB) *SellRepository {
 	return &SellRepository{db: db}
 }
 
+func (r *SellRepository) Delete(id uuid.UUID) error {
+	_, err := r.db.Exec(`DELETE FROM sell_headers WHERE id = $1`, id)
+	return err
+}
+
+// GetByInvoiceNum retrieves a Sell header by its invoice number
+func (r *SellRepository) GetByInvoiceNum(invoiceNum string) (*models.SellHeader, error) {
+	var header models.SellHeader
+	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount, 
+			  status, created_at, updated_at, created_by, updated_by 
+			  FROM sell_headers 
+			  WHERE sell_invoice_num = $1`
+
+	err := r.db.Get(&header, query, invoiceNum)
+	if err != nil {
+		return nil, err // Return error (typically sql.ErrNoRows if not found)
+	}
+	return &header, nil
+}
+
 func (r *SellRepository) Create(sell *models.SellFull) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
@@ -29,8 +49,8 @@ func (r *SellRepository) Create(sell *models.SellFull) error {
 	sell.Header.CreatedAt = time.Now()
 
 	headerQuery := `INSERT INTO sell_headers 
-		(id, sell_invoice_num, sell_date, customer_name, total_amount, created_at, created_by) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+		(id, sell_invoice_num, sell_date, customer_name, total_amount, status, created_at, created_by) 
+		VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7)`
 
 	_, err = tx.Exec(
 		headerQuery,
@@ -153,7 +173,7 @@ func (r *SellRepository) insertDetails(tx *sqlx.Tx, header *models.SellHeader, d
 func (r *SellRepository) GetAll() ([]models.SellHeader, error) {
 	var headers []models.SellHeader
 	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount, 
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM sell_headers 
 			  ORDER BY sell_date DESC`
 
@@ -166,7 +186,7 @@ func (r *SellRepository) GetByID(id uuid.UUID) (*models.SellFull, error) {
 
 	// Get header
 	headerQuery := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount,
-					created_at, updated_at, created_by, updated_by 
+					status, created_at, updated_at, created_by, updated_by 
 					FROM sell_headers 
 					WHERE id = $1`
 
@@ -192,7 +212,7 @@ func (r *SellRepository) GetByID(id uuid.UUID) (*models.SellFull, error) {
 func (r *SellRepository) Search(keyword string) ([]models.SellHeader, error) {
 	var headers []models.SellHeader
 	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount,
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM sell_headers 
 			  WHERE LOWER(sell_invoice_num) LIKE LOWER($1) 
 			  OR LOWER(customer_name) LIKE LOWER($1)
@@ -201,4 +221,52 @@ func (r *SellRepository) Search(keyword string) ([]models.SellHeader, error) {
 	searchPattern := "%" + keyword + "%"
 	err := r.db.Select(&headers, query, searchPattern)
 	return headers, err
+}
+
+// Void membatalkan transaksi Penjualan secara soft-delete
+func (r *SellRepository) Void(id uuid.UUID, updatedBy uuid.UUID) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Dapatkan detail item yang dijual
+	var details []models.SellDetail
+	err = tx.Select(&details, `SELECT item_id, qty FROM sell_details WHERE header_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Kembalikan stok (tambah stok gudang karena pelanggan batal beli)
+	for _, d := range details {
+		_, err = tx.Exec(`UPDATE items SET qty = qty + $1 WHERE id = $2`, d.Qty, d.ItemID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 3. Catat mutasi pembatalan
+	now := time.Now()
+	period := now.Format("2006-01")
+	for _, d := range details {
+		mutationID := uuid.New()
+		mutationQuery := `INSERT INTO stock_mutations 
+						  (id, item_id, period, trx_date, qty, model_id, model_type, created_at) 
+						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+		// qty diset positif karena kita mengembalikan barang retur (void sell)
+		_, err = tx.Exec(mutationQuery, mutationID, d.ItemID, period, now, d.Qty, id, "void_sell", now)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 4. Update status header menjadi VOID
+	_, err = tx.Exec(`UPDATE sell_headers SET status = 'VOID', updated_at = $1, updated_by = $2 WHERE id = $3 AND status != 'VOID'`, now, updatedBy, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

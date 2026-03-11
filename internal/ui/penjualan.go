@@ -27,6 +27,7 @@ type PenjualanHeader struct {
 	NoNota   string
 	Customer string
 	Total    string
+	Status   string
 }
 
 type PenjualanItem struct {
@@ -76,7 +77,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	namaBarang.PlaceHolder = "Pilih Barang..."
 
 	qty := widget.NewEntry()
-	
+
 	stockInfo := canvas.NewText("", color.NRGBA{R: 128, G: 128, B: 128, A: 255})
 	stockInfo.TextSize = 12
 	stockWarning := canvas.NewText("", color.NRGBA{R: 255, G: 0, B: 0, A: 255})
@@ -159,6 +160,10 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 	}
 
+	// Items table data
+	var items []PenjualanItem
+	var itemsTable *widget.Table
+
 	// Kode barang lookup
 	kodeBarang.OnChanged = func(code string) {
 		if isSyncing {
@@ -198,7 +203,15 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			namaBarang.SetText(fmt.Sprintf("%s - %s", item.Code, item.Name))
 			isSyncing = false
 			selectedItem = item
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty)
+
+			var currentInCart float64
+			for i, row := range items {
+				if row.ItemID == selectedItem.ID && i != selectedItemIndex {
+					qtyVal, _ := strconv.ParseFloat(row.Qty, 64)
+					currentInCart += qtyVal
+				}
+			}
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty - currentInCart)
 		} else {
 			isSyncing = true
 			namaBarang.SetText("")
@@ -213,12 +226,25 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	qty.OnChanged = func(val string) {
 		if selectedItem != nil {
+			var currentInCart float64
+			for i, item := range items {
+				if item.ItemID == selectedItem.ID && i != selectedItemIndex {
+					qtyVal, _ := strconv.ParseFloat(item.Qty, 64)
+					currentInCart += qtyVal
+				}
+			}
+			availableStock := selectedItem.Qty - currentInCart
+			
+			// Selalu update label info ketersediaan stok secara real-time berdasarkan isi cart
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", availableStock)
+			stockInfo.Refresh()
+
 			v, err := strconv.ParseFloat(val, 64)
 			if err == nil {
-				if v > selectedItem.Qty { // For Penjualan, stock must be sufficient
+				if v > availableStock { // For Penjualan, stock must be sufficient
 					stockWarning.Text = "Stok kurang!"
-				} else if v < 0 {
-					stockWarning.Text = "Qty minus!"
+				} else if v <= 0 {
+					stockWarning.Text = "Qty invalid!"
 				} else {
 					stockWarning.Text = ""
 				}
@@ -229,9 +255,21 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 	}
 
-	// Items table data
-	var items []PenjualanItem
-	var itemsTable *widget.Table
+	// Items table data variables moved above qty.OnChanged
+
+	updateStockInfo := func() {
+		if selectedItem != nil {
+			var currentInCart float64
+			for i, row := range items {
+				if row.ItemID == selectedItem.ID && i != selectedItemIndex {
+					qtyVal, _ := strconv.ParseFloat(row.Qty, 64)
+					currentInCart += qtyVal
+				}
+			}
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty - currentInCart)
+			stockInfo.Refresh()
+		}
+	}
 
 	totalLabel := canvas.NewText("Total : Rp 0", color.Black)
 	totalLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -246,6 +284,15 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		totalLabel.Text = "Total : " + FormatCurrency(sum)
 		totalLabel.Refresh()
 		return sum
+	}
+
+	// Function to refresh items table
+	refreshItemsTable := func() {
+		if itemsTable != nil {
+			itemsTable.Refresh()
+			recalculateTotal()
+			updateStockInfo()
+		}
 	}
 
 	// Header form
@@ -275,23 +322,17 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 				Total:      v.Total,
 			}
 		}
-		
+
 		// Lock header inputs
 		tglNota.Disable()
 		noNota.Disable()
 		customer.Disable()
 		calendarBtn.Disable()
-		
+
 		recalculateTotal()
 	}
 
-	// Function to refresh items table
-	refreshItemsTable := func() {
-		if itemsTable != nil {
-			itemsTable.Refresh()
-			recalculateTotal()
-		}
-	}
+
 
 	// Buttons
 	addItemBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), nil)
@@ -337,16 +378,20 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
-		// Check stock availability
-		// Special case: if updating, adding back the current qty to available stock for check
-		availableStock := selectedItem.Qty
-		if selectedItemIndex >= 0 {
-			currentQty, _ := strconv.ParseFloat(items[selectedItemIndex].Qty, 64)
-			availableStock += currentQty
+		// Check stock availability (Penjualan / Jual = kurang stock)
+		// Harus cek ketersediaan dikurang qty yang sudah masuk keranjang di transaksi ini
+		var currentInCart float64
+		for i, item := range items {
+			if item.ItemID == selectedItem.ID && i != selectedItemIndex {
+				q, _ := strconv.ParseFloat(item.Qty, 64)
+				currentInCart += q
+			}
 		}
 
+		availableStock := selectedItem.Qty - currentInCart
+
 		if qtyVal > availableStock {
-			dialog.ShowError(fmt.Errorf("Stok tidak mencukupi! Stok tersedia: %.0f", availableStock), w)
+			dialog.ShowError(fmt.Errorf("Stok tidak mencukupi! Sisa stok yang bisa ditarik: %.0f", availableStock), w)
 			return
 		}
 
@@ -521,13 +566,13 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	itemsTable.SetColumnWidth(1, 200) // Nama
 	itemsTable.SetColumnWidth(2, 60)  // Qty
 	itemsTable.SetColumnWidth(3, 120) // Harga
-	
+
 	if existingData != nil {
 		itemsTable.SetColumnWidth(4, 160) // Absorb Delete button width (120+40)
-		itemsTable.SetColumnWidth(5, 0) // Hide edit button for readonly mode
+		itemsTable.SetColumnWidth(5, 0)   // Hide edit button for readonly mode
 	} else {
 		itemsTable.SetColumnWidth(4, 120) // Total
-		itemsTable.SetColumnWidth(5, 40) // Delete/Edit
+		itemsTable.SetColumnWidth(5, 40)  // Delete/Edit
 	}
 
 	// Dialog content
@@ -539,6 +584,16 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			dialog.ShowInformation("Error", "Header data harus diisi!", w)
 			return
 		}
+
+		if existingData == nil {
+			// Validasi No Nota duplikat
+			existing, _ := s.SellRepo.GetByInvoiceNum(noNota.Text)
+			if existing != nil {
+				dialog.ShowInformation("Error", "No. Nota sudah terdaftar, silakan gunakan nomor lain!", w)
+				return
+			}
+		}
+
 		// Validate item count
 		if len(items) == 0 {
 			dialog.ShowInformation("Error", "Minimal 1 item harus ditambahkan!", w)
@@ -619,7 +674,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	cancelBtn.Importance = widget.DangerImportance
 
 	var buttons *fyne.Container
-	
+
 	if existingData != nil {
 		cancelBtn.SetText("Tutup")
 		cancelBtn.Importance = widget.HighImportance
@@ -632,7 +687,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	labelText := "Nota Baru"
 	if existingData != nil {
 		labelText = "Detail Nota"
-		
+
 		// Hide edit elements completely
 		kodeBarang.Disable()
 		namaBarang.Disable()
@@ -910,6 +965,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				NoNota:   h.SellInvoiceNum,
 				Customer: h.CustomerName,
 				Total:    FormatCurrency(h.TotalAmount),
+				Status:   h.Status,
 			}
 		}
 	}
@@ -966,12 +1022,24 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 			if id.Row-1 < len(data) {
 				item := data[id.Row-1]
+
+				// Red text indicating VOID for all columns
+				if item.Status == "VOID" {
+					if id.Row-1 != selectedRow {
+						text.Color = color.NRGBA{R: 220, G: 50, B: 50, A: 255}
+					}
+				}
+
 				switch id.Col {
 				case 0:
 					text.Text = item.TglNota
 					text.Alignment = fyne.TextAlignCenter
 				case 1:
-					text.Text = item.NoNota
+					if item.Status == "VOID" {
+						text.Text = item.NoNota + " [VOID]"
+					} else {
+						text.Text = item.NoNota
+					}
 					text.Alignment = fyne.TextAlignCenter
 				case 2:
 					text.Text = item.Customer
@@ -1045,7 +1113,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		if time.Since(lastDialogTime) < 500*time.Millisecond {
 			return
 		}
-		
+
 		switch k.Name {
 
 		// New nota
@@ -1065,6 +1133,33 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				showPenjualanDialog(w, s, refreshTable, sell)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
+		case fyne.KeyDelete:
+			lastDialogTime = time.Now()
+			if selectedRow >= 0 && selectedRow < len(data) {
+				selectedID := data[selectedRow].ID
+				selectedStatus := data[selectedRow].Status
+
+				if selectedStatus == "VOID" {
+					dialog.ShowInformation("Info", "Nota ini sudah berstatus VOID!", w)
+					return
+				}
+
+				dialog.ShowConfirm("Void Nota Penjualan",
+					"Apakah Anda yakin ingin melakukan VOID pada nota ini?\n\nAksi ini akan memutarbalikan stok barang yang sudah dijual kembali ke sistem dan mengubah status nota menjadi VOID.",
+					func(b bool) {
+						if b {
+							err := s.SellRepo.Void(selectedID, s.User.ID)
+							if err != nil {
+								dialog.ShowError(err, w)
+							} else {
+								dialog.ShowInformation("Sukses", "Nota berhasil di-Void!", w)
+								refreshTable()
+							}
+						}
+					}, w)
+			} else {
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu sebelum di-Void!", w)
 			}
 		case fyne.KeyUp:
 			if len(data) > 0 {
@@ -1152,7 +1247,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Footer
 	footer := canvas.NewText(
-		"[Insert] Nota Baru  [V] Preview Nota",
+		"[Insert] Nota Baru  [V] Preview Nota  [Del] Void",
 		color.White,
 	)
 	footer.TextStyle = fyne.TextStyle{Italic: true}

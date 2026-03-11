@@ -16,6 +16,7 @@ type ReturHeader struct {
 	UpdatedAt       *time.Time `db:"updated_at"`
 	CreatedBy       *uuid.UUID `db:"created_by"`
 	UpdatedBy       *uuid.UUID `db:"updated_by"`
+	Status          string     `db:"status"`
 }
 
 type ReturDetail struct {

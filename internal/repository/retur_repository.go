@@ -28,7 +28,7 @@ func (r *ReturRepository) Create(header *models.ReturHeader, details []models.Re
 	if err != nil {
 		return uuid.Nil, err
 	}
-	
+
 	// Defer rollback, it will be ignored if tx.Commit() succeeds
 	defer tx.Rollback()
 
@@ -37,8 +37,8 @@ func (r *ReturRepository) Create(header *models.ReturHeader, details []models.Re
 	header.CreatedAt = time.Now()
 
 	headerQuery := `INSERT INTO retur_headers 
-		(id, retur_invoice_num, retur_date, supplier_name, total_amount, created_at, created_by) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+		(id, retur_invoice_num, retur_date, supplier_name, total_amount, status, created_at, created_by) 
+		VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7)`
 
 	_, err = tx.Exec(
 		headerQuery,
@@ -116,7 +116,7 @@ func (r *ReturRepository) Create(header *models.ReturHeader, details []models.Re
 func (r *ReturRepository) GetAll() ([]models.ReturHeader, error) {
 	var headers []models.ReturHeader
 	query := `SELECT id, retur_invoice_num, retur_date, supplier_name, total_amount, 
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM retur_headers 
 			  ORDER BY retur_date DESC`
 
@@ -130,7 +130,7 @@ func (r *ReturRepository) GetByID(id uuid.UUID) (*models.ReturFull, error) {
 
 	// Get header
 	headerQuery := `SELECT id, retur_invoice_num, retur_date, supplier_name, total_amount,
-					created_at, updated_at, created_by, updated_by 
+					status, created_at, updated_at, created_by, updated_by 
 					FROM retur_headers 
 					WHERE id = $1`
 
@@ -157,7 +157,7 @@ func (r *ReturRepository) GetByID(id uuid.UUID) (*models.ReturFull, error) {
 func (r *ReturRepository) GetByInvoiceNum(invoiceNum string) (*models.ReturHeader, error) {
 	var header models.ReturHeader
 	query := `SELECT id, retur_invoice_num, retur_date, supplier_name, total_amount, 
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM retur_headers 
 			  WHERE retur_invoice_num = $1`
 
@@ -172,7 +172,7 @@ func (r *ReturRepository) GetByInvoiceNum(invoiceNum string) (*models.ReturHeade
 func (r *ReturRepository) Search(keyword string) ([]models.ReturHeader, error) {
 	var headers []models.ReturHeader
 	query := `SELECT id, retur_invoice_num, retur_date, supplier_name, total_amount,
-			  created_at, updated_at, created_by, updated_by 
+			  status, created_at, updated_at, created_by, updated_by 
 			  FROM retur_headers 
 			  WHERE LOWER(retur_invoice_num) LIKE LOWER($1) 
 			  OR LOWER(supplier_name) LIKE LOWER($1)
@@ -181,4 +181,52 @@ func (r *ReturRepository) Search(keyword string) ([]models.ReturHeader, error) {
 	searchPattern := "%" + keyword + "%"
 	err := r.db.Select(&headers, query, searchPattern)
 	return headers, err
+}
+
+// Void membatalkan transaksi Retur secara soft-delete
+func (r *ReturRepository) Void(id uuid.UUID, updatedBy uuid.UUID) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Dapatkan detail item yang diretur
+	var details []models.ReturDetail
+	err = tx.Select(&details, `SELECT item_id, qty FROM retur_details WHERE header_id = $1`, id)
+	if err != nil {
+		return err
+	}
+
+	// 2. Kembalikan stok (tambah stok gudang karena batal kembalikan ke supplier)
+	for _, d := range details {
+		_, err = tx.Exec(`UPDATE items SET qty = qty + $1 WHERE id = $2`, d.Qty, d.ItemID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 3. Catat mutasi pembatalan
+	now := time.Now()
+	period := now.Format("2006-01")
+	for _, d := range details {
+		mutationID := uuid.New()
+		mutationQuery := `INSERT INTO stock_mutations 
+						  (id, item_id, period, trx_date, qty, model_id, model_type, created_at) 
+						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+		// qty diset positif karena kita batal mengurangi stok retur (void retur)
+		_, err = tx.Exec(mutationQuery, mutationID, d.ItemID, period, now, d.Qty, id, "void_retur", now)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 4. Update status header menjadi VOID
+	_, err = tx.Exec(`UPDATE retur_headers SET status = 'VOID', updated_at = $1, updated_by = $2 WHERE id = $3 AND status != 'VOID'`, now, updatedBy, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

@@ -102,7 +102,7 @@ func openFile(fileName string) error {
 	var err error
 	switch runtime.GOOS {
 	case "windows":
-		// Must use absolute path on windows or cmd won't find it sometimes if args are weird, 
+		// Must use absolute path on windows or cmd won't find it sometimes if args are weird,
 		// but simple wrapper is enough if in CWD.
 		absPath, _ := filepath.Abs(fileName)
 		err = exec.Command("cmd", "/c", "start", "", absPath).Start()

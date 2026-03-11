@@ -37,7 +37,7 @@ func (AppTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color
 	// Button colors - Light background for menu buttons
 	case theme.ColorNameButton:
 		return color.NRGBA{R: 245, G: 245, B: 245, A: 255}
-		
+
 	case theme.ColorNameMenuBackground:
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	}
