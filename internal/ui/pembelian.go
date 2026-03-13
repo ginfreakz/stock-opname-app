@@ -597,7 +597,12 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	})
 	submitBtn.Importance = widget.HighImportance
 
-	cancelBtn := widget.NewButton("Cancel", func() { d.Hide() })
+	cancelBtn := widget.NewButton("Cancel", func() {
+		d.Hide()
+		if refreshCallback != nil {
+			refreshCallback()
+		}
+	})
 	cancelBtn.Importance = widget.DangerImportance
 
 	var buttons *fyne.Container
@@ -683,11 +688,13 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	d.Show()
 
 	// Initial focus on Kode Barang first to encourage item adding
-	time.AfterFunc(100*time.Millisecond, func() {
-		fyne.Do(func() {
-			w.Canvas().Focus(kodeBarang)
+	if existingData == nil {
+		time.AfterFunc(100*time.Millisecond, func() {
+			fyne.Do(func() {
+				w.Canvas().Focus(kodeBarang)
+			})
 		})
-	})
+	}
 }
 
 // (Edit dialog removed to unify Add flow)
@@ -966,9 +973,10 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	var lastDialogTime time.Time
+	var isDialogOpen bool
 
 	handleKey := func(k *fyne.KeyEvent) {
-		if time.Since(lastDialogTime) < 500*time.Millisecond {
+		if time.Since(lastDialogTime) < 500*time.Millisecond || isDialogOpen {
 			return
 		}
 
@@ -977,7 +985,8 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		// New nota
 		case fyne.KeyInsert:
 			lastDialogTime = time.Now()
-			showPembelianDialog(w, s, refreshTable, nil)
+			isDialogOpen = true
+			showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, nil)
 
 		// Preview
 		case fyne.KeyV:
@@ -988,7 +997,8 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					dialog.ShowError(err, w)
 					return
 				}
-				showPembelianDialog(w, s, refreshTable, purchase)
+				isDialogOpen = true
+				showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, purchase)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
