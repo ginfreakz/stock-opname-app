@@ -41,7 +41,15 @@ func PrintNotaPenjualan(header models.SellHeader, items []DisplayItem) error {
 	pdf.SetFont("Arial", "B", 16)
 	pdf.CellFormat(190, 10, "NOTA PENJUALAN", "", 1, "C", false, 0, "")
 
-	pdf.Ln(5)
+	if header.Status == "VOID" {
+		pdf.SetTextColor(255, 0, 0)
+		pdf.SetFont("Arial", "B", 24)
+		pdf.CellFormat(190, 10, "** VOID **", "", 1, "C", false, 0, "")
+		pdf.SetTextColor(0, 0, 0) // Reset to black
+		pdf.Ln(2)
+	} else {
+		pdf.Ln(5)
+	}
 
 	// Header Info
 	pdf.SetFont("Arial", "", 10)

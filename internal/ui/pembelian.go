@@ -827,7 +827,12 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search No. Nota or Vendor...")
-	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
+
+	statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
+	statusFilter.SetSelected("Semua")
+
+	rightPanel := container.NewGridWithColumns(2, search, statusFilter)
+	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(rightPanel))
 
 	headers := []string{"Tgl. Nota", "No. Nota", "Vendor", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -836,7 +841,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var data []PembelianHeader
 	var selectedRow int = -1
 
-	loadData := func(keyword string) {
+	loadData := func(keyword string, sfilt string) {
 		selectedRow = -1
 		var headers []models.PurchaseHeader
 		var err error
@@ -849,20 +854,23 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			dialog.ShowError(err, w)
 			return
 		}
-		data = make([]PembelianHeader, len(headers))
-		for i, h := range headers {
-			data[i] = PembelianHeader{
+		data = nil
+		for _, h := range headers {
+			if sfilt != "Semua" && h.Status != sfilt {
+				continue
+			}
+			data = append(data, PembelianHeader{
 				ID:      h.ID,
 				TglNota: h.PurchaseDate.Format("2006-01-02"),
 				NoNota:  h.PurchaseInvoiceNum,
 				Vendor:  h.SupplierName,
 				Total:   FormatCurrency(h.TotalAmount),
 				Status:  h.Status,
-			}
+			})
 		}
 	}
 
-	loadData("")
+	loadData("", "Semua")
 
 	table := widget.NewTable(
 		func() (int, int) { return len(data) + 1, len(headers) },
@@ -933,7 +941,12 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// enable live searching
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
-		loadData(keyword)
+		loadData(keyword, statusFilter.Selected)
+		table.Refresh()
+	}
+	statusFilter.OnChanged = func(_ string) {
+		selectedRow = -1
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 	}
 
@@ -947,7 +960,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	refreshTable := func() {
-		loadData(search.Text)
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 		safeFocus()
 	}

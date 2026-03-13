@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -239,6 +241,36 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	dialogOpen := false
 
+	sortColumn := -1
+	sortAscending := true
+
+	sortData := func() {
+		if sortColumn < 0 {
+			return
+		}
+		sort.Slice(data, func(i, j int) bool {
+			var less bool
+			switch sortColumn {
+			case 0:
+				less = strings.ToLower(data[i].Code) < strings.ToLower(data[j].Code)
+			case 1:
+				less = strings.ToLower(data[i].Name) < strings.ToLower(data[j].Name)
+			case 2:
+				qi, _ := strconv.ParseFloat(data[i].Qty, 64)
+				qj, _ := strconv.ParseFloat(data[j].Qty, 64)
+				less = qi < qj
+			case 3:
+				pi, _ := strconv.ParseFloat(data[i].Price, 64)
+				pj, _ := strconv.ParseFloat(data[j].Price, 64)
+				less = pi < pj
+			}
+			if !sortAscending {
+				return !less
+			}
+			return less
+		})
+	}
+
 	loadData := func(keyword string) {
 		var items []models.Item
 		var err error
@@ -291,7 +323,15 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 			if id.Row == 0 {
 				cellBg.FillColor = headerBg
-				text.Text = headers[id.Col]
+				headerText := headers[id.Col]
+				if sortColumn == id.Col {
+					if sortAscending {
+						headerText += " ▲"
+					} else {
+						headerText += " ▼"
+					}
+				}
+				text.Text = headerText
 				text.Color = color.White
 				text.TextSize = 14
 				text.TextStyle = fyne.TextStyle{Bold: true}
@@ -352,6 +392,24 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Table selection — single click only
 	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row == 0 {
+			// Header clicked — toggle sorting
+			if sortColumn == id.Col {
+				sortAscending = !sortAscending
+			} else {
+				sortColumn = id.Col
+				sortAscending = true
+			}
+			sortData()
+			table.UnselectAll()
+			table.Refresh()
+			time.AfterFunc(50*time.Millisecond, func() {
+				fyne.Do(func() {
+					safeFocus()
+				})
+			})
+			return
+		}
 		if id.Row > 0 && id.Row-1 < len(data) {
 			selectedRow = id.Row - 1
 			table.Refresh()
@@ -375,6 +433,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
 		loadData(keyword)
+		sortData()
 		table.Refresh()
 	}
 

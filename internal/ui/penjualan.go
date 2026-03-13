@@ -930,7 +930,11 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search No. Nota or Customer...")
 
-	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
+	statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
+	statusFilter.SetSelected("Semua")
+
+	rightPanel := container.NewGridWithColumns(2, search, statusFilter)
+	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(rightPanel))
 
 	// Table headers
 	headers := []string{"Tgl. Nota", "No. Nota", "Customer", "Total", "Aksi"}
@@ -941,7 +945,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var selectedRow int = -1
 
 	// Load data from database
-	loadData := func(keyword string) {
+	loadData := func(keyword string, sfilt string) {
 		selectedRow = -1
 		var headers []models.SellHeader
 		var err error
@@ -957,21 +961,24 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			return
 		}
 
-		data = make([]PenjualanHeader, len(headers))
-		for i, h := range headers {
-			data[i] = PenjualanHeader{
+		data = nil
+		for _, h := range headers {
+			if sfilt != "Semua" && h.Status != sfilt {
+				continue
+			}
+			data = append(data, PenjualanHeader{
 				ID:       h.ID,
 				TglNota:  h.SellDate.Format("2006-01-02"),
 				NoNota:   h.SellInvoiceNum,
 				Customer: h.CustomerName,
 				Total:    FormatCurrency(h.TotalAmount),
 				Status:   h.Status,
-			}
+			})
 		}
 	}
 
 	// Initial load
-	loadData("")
+	loadData("", "Semua")
 
 	// After initial load we will bind the search field once the table is created
 
@@ -1090,7 +1097,12 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// hook up search after table exists
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
-		loadData(keyword)
+		loadData(keyword, statusFilter.Selected)
+		table.Refresh()
+	}
+	statusFilter.OnChanged = func(_ string) {
+		selectedRow = -1
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 	}
 	if focusWrapper != nil {
@@ -1101,7 +1113,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Refresh function
 	refreshTable := func() {
-		loadData(search.Text)
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 		safeFocus()
 	}
