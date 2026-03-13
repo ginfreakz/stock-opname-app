@@ -767,7 +767,12 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search No. Nota or Vendor...")
-	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
+
+	statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
+	statusFilter.SetSelected("Semua")
+
+	rightPanel := container.NewGridWithColumns(2, search, statusFilter)
+	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(rightPanel))
 
 	headers := []string{"Tgl. Nota", "No. Nota", "Vendor", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -776,7 +781,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var data []ReturHeaderUI
 	var selectedRow int = -1
 
-	loadData := func(keyword string) {
+	loadData := func(keyword string, sfilt string) {
 		selectedRow = -1
 		var headers []models.ReturHeader
 		var err error
@@ -789,20 +794,23 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			dialog.ShowError(err, w)
 			return
 		}
-		data = make([]ReturHeaderUI, len(headers))
-		for i, h := range headers {
-			data[i] = ReturHeaderUI{
+		data = nil
+		for _, h := range headers {
+			if sfilt != "Semua" && h.Status != sfilt {
+				continue
+			}
+			data = append(data, ReturHeaderUI{
 				ID:      h.ID,
 				TglNota: h.ReturDate.Format("2006-01-02"),
 				NoNota:  h.ReturInvoiceNum,
 				Vendor:  h.SupplierName,
 				Total:   FormatCurrency(h.TotalAmount),
 				Status:  h.Status,
-			}
+			})
 		}
 	}
 
-	loadData("")
+	loadData("", "Semua")
 
 	table := widget.NewTable(
 		func() (int, int) { return len(data) + 1, len(headers) },
@@ -872,7 +880,12 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
-		loadData(keyword)
+		loadData(keyword, statusFilter.Selected)
+		table.Refresh()
+	}
+	statusFilter.OnChanged = func(_ string) {
+		selectedRow = -1
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 	}
 
@@ -886,7 +899,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	refreshTable := func() {
-		loadData(search.Text)
+		loadData(search.Text, statusFilter.Selected)
 		table.Refresh()
 		safeFocus()
 	}

@@ -40,6 +40,10 @@ func (AppTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color
 
 	case theme.ColorNameMenuBackground:
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+
+	// Primary color — used by Select widget focus, HighImportance buttons, etc.
+	case theme.ColorNamePrimary:
+		return color.NRGBA{R: 55, G: 90, B: 220, A: 255}
 	}
 
 	return theme.DefaultTheme().Color(name, variant)
