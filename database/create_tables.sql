@@ -191,3 +191,8 @@ CREATE TABLE public.retur_details (
   CONSTRAINT retur_details_item_id_foreign FOREIGN KEY (item_id) REFERENCES public.items(id) ON DELETE CASCADE
 
 );
+
+
+ALTER TABLE purchase_headers ADD COLUMN status VARCHAR(10) DEFAULT 'ACTIVE';
+ALTER TABLE sell_headers ADD COLUMN status VARCHAR(10) DEFAULT 'ACTIVE';
+ALTER TABLE retur_headers ADD COLUMN status VARCHAR(10) DEFAULT 'ACTIVE';
