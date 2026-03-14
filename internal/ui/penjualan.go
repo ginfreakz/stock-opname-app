@@ -211,7 +211,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty - currentInCart)
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty-currentInCart)
 		} else {
 			isSyncing = true
 			namaBarang.SetText("")
@@ -234,7 +234,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 				}
 			}
 			availableStock := selectedItem.Qty - currentInCart
-			
+
 			// Selalu update label info ketersediaan stok secara real-time berdasarkan isi cart
 			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", availableStock)
 			stockInfo.Refresh()
@@ -266,7 +266,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty - currentInCart)
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty-currentInCart)
 			stockInfo.Refresh()
 		}
 	}
@@ -331,8 +331,6 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 		recalculateTotal()
 	}
-
-
 
 	// Buttons
 	addItemBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), nil)
@@ -943,11 +941,12 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search No. Nota or Customer...")
 
-	statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
-	statusFilter.SetSelected("Semua")
+	// statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
+	// statusFilter.SetSelected("Semua")
 
-	rightPanel := container.NewGridWithColumns(2, search, statusFilter)
-	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(rightPanel))
+	// rightPanel := container.NewGridWithColumns(2, search, statusFilter)
+	// header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(rightPanel))
+	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
 
 	// Table headers
 	headers := []string{"Tgl. Nota", "No. Nota", "Customer", "Total", "Aksi", ""}
@@ -958,7 +957,8 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var selectedRow int = -1
 
 	// Load data from database
-	loadData := func(keyword string, sfilt string) {
+	// loadData := func(keyword string, sfilt string) {
+	loadData := func(keyword string) {
 		selectedRow = -1
 		var headers []models.SellHeader
 		var err error
@@ -976,9 +976,9 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 		data = nil
 		for _, h := range headers {
-			if sfilt != "Semua" && h.Status != sfilt {
-				continue
-			}
+			// if sfilt != "Semua" && h.Status != sfilt {
+			// 	continue
+			// }
 			data = append(data, PenjualanHeader{
 				ID:       h.ID,
 				TglNota:  h.SellDate.Format("2006-01-02"),
@@ -991,7 +991,8 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	// Initial load
-	loadData("", "Semua")
+	// loadData("", "Semua")
+	loadData("")
 
 	// After initial load we will bind the search field once the table is created
 
@@ -1141,14 +1142,14 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// hook up search after table exists
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
-		loadData(keyword, statusFilter.Selected)
+		loadData(keyword)
 		table.Refresh()
 	}
-	statusFilter.OnChanged = func(_ string) {
-		selectedRow = -1
-		loadData(search.Text, statusFilter.Selected)
-		table.Refresh()
-	}
+	// statusFilter.OnChanged = func(_ string) {
+	// 	selectedRow = -1
+	// 	loadData(search.Text, statusFilter.Selected)
+	// 	table.Refresh()
+	// }
 	if focusWrapper != nil {
 		fyne.Do(func() {
 			w.Canvas().Focus(focusWrapper)
@@ -1157,7 +1158,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// Refresh function
 	refreshTable = func() {
-		loadData(search.Text, statusFilter.Selected)
+		loadData(search.Text)
 		table.Refresh()
 		safeFocus()
 	}
