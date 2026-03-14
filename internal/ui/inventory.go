@@ -19,14 +19,17 @@ import (
 	"fyne-app/internal/state"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 type InventoryItem struct {
-	ID    uuid.UUID
-	Code  string
-	Name  string
-	Qty   string
-	Price string
+	ID         uuid.UUID
+	Code       string
+	Name       string
+	Qty        string
+	Price      string
+	HargaModal string
 }
 
 func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, refreshCallback func()) {
@@ -234,6 +237,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		"Nama Barang",
 		"QTY",
 		"Harga",
+		"Harga Modal",
 	}
 
 	var data []InventoryItem
@@ -263,6 +267,10 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				pi, _ := strconv.ParseFloat(data[i].Price, 64)
 				pj, _ := strconv.ParseFloat(data[j].Price, 64)
 				less = pi < pj
+			case 4:
+				hi, _ := ParseCurrencyString(data[i].HargaModal)
+				hj, _ := ParseCurrencyString(data[j].HargaModal)
+				less = hi < hj
 			}
 			if !sortAscending {
 				return !less
@@ -286,14 +294,25 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			return
 		}
 
+		// Fetch latest purchase prices (harga beli) for harga modal
+		purchasePrices, _ := s.ItemRepo.GetLatestPurchasePrices()
+
 		data = make([]InventoryItem, len(items))
 		for i, item := range items {
+			hargaModal := "-"
+			if purchasePrices != nil {
+				if price, ok := purchasePrices[item.ID]; ok {
+					p := message.NewPrinter(language.Indonesian)
+					hargaModal = p.Sprintf("%.0f", price)
+				}
+			}
 			data[i] = InventoryItem{
-				ID:    item.ID,
-				Code:  item.Code,
-				Name:  item.Name,
-				Qty:   fmt.Sprintf("%.0f", item.Qty),
-				Price: fmt.Sprintf("%.0f", item.Price),
+				ID:         item.ID,
+				Code:       item.Code,
+				Name:       item.Name,
+				Qty:        fmt.Sprintf("%.0f", item.Qty),
+				Price:      fmt.Sprintf("%.0f", item.Price),
+				HargaModal: hargaModal,
 			}
 		}
 	}
@@ -366,6 +385,9 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				case 3:
 					text.Text = item.Price
 					text.Alignment = fyne.TextAlignTrailing
+				case 4:
+					text.Text = item.HargaModal
+					text.Alignment = fyne.TextAlignTrailing
 				}
 			}
 
@@ -424,10 +446,11 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	// ===== COLUMN WIDTH =====
-	table.SetColumnWidth(0, 150)
-	table.SetColumnWidth(1, 450)
-	table.SetColumnWidth(2, 120)
-	table.SetColumnWidth(3, 210)
+	table.SetColumnWidth(0, 120)
+	table.SetColumnWidth(1, 350)
+	table.SetColumnWidth(2, 100)
+	table.SetColumnWidth(3, 180)
+	table.SetColumnWidth(4, 180)
 
 	// Search functionality
 	search.OnChanged = func(keyword string) {
@@ -558,7 +581,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// ===== CENTERED TABLE WRAPPER =====
 	tableWrapper := container.NewCenter(
 		container.NewGridWrap(
-			fyne.NewSize(950, 480),
+			fyne.NewSize(1050, 480),
 			focusWrapper,
 		),
 	)
@@ -577,7 +600,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	rect.CornerRadius = 12
 	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40} // Subtle white border
 	rect.StrokeWidth = 1
-	rect.SetMinSize(fyne.NewSize(1050, 650))
+	rect.SetMinSize(fyne.NewSize(1150, 650))
 
 	// Stack content on top of the background rectangle with padding
 	panel := container.NewMax(

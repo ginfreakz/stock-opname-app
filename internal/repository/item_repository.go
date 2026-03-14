@@ -124,3 +124,29 @@ func (r *ItemRepository) UpdateQty(tx *sqlx.Tx, itemID uuid.UUID, qtyChange floa
 func (r *ItemRepository) BeginTx() (*sqlx.Tx, error) {
 	return r.db.Beginx()
 }
+
+// GetLatestPurchasePrices returns a map of item_id -> latest purchase price (harga beli)
+func (r *ItemRepository) GetLatestPurchasePrices() (map[uuid.UUID]float64, error) {
+	type result struct {
+		ItemID      uuid.UUID `db:"item_id"`
+		PriceAmount float64   `db:"price_amount"`
+	}
+
+	query := `SELECT DISTINCT ON (pd.item_id) pd.item_id, pd.price_amount
+			  FROM purchase_details pd
+			  JOIN purchase_headers ph ON ph.id = pd.header_id
+			  WHERE ph.status = 'ACTIVE'
+			  ORDER BY pd.item_id, ph.purchase_date DESC, pd.created_at DESC`
+
+	var rows []result
+	err := r.db.Select(&rows, query)
+	if err != nil {
+		return nil, err
+	}
+
+	prices := make(map[uuid.UUID]float64, len(rows))
+	for _, row := range rows {
+		prices[row.ItemID] = row.PriceAmount
+	}
+	return prices, nil
+}

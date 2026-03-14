@@ -768,11 +768,12 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search No. Nota or Vendor...")
 
-	statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
-	statusFilter.SetSelected("Semua")
+	// statusFilter := widget.NewSelect([]string{"Semua", "ACTIVE", "VOID"}, nil)
+	// statusFilter.SetSelected("Semua")
 
-	rightPanel := container.NewGridWithColumns(2, search, statusFilter)
-	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(rightPanel))
+	// rightPanel := container.NewGridWithColumns(2, search, statusFilter)
+	// header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(rightPanel))
+	header := container.NewGridWithColumns(3, backBtn, title, container.NewMax(search))
 
 	headers := []string{"Tgl. Nota", "No. Nota", "Vendor", "Total"}
 	headerBg := color.NRGBA{R: 30, G: 30, B: 30, A: 255}
@@ -781,7 +782,8 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var data []ReturHeaderUI
 	var selectedRow int = -1
 
-	loadData := func(keyword string, sfilt string) {
+	// loadData := func(keyword string, sfilt string) {
+	loadData := func(keyword string) {
 		selectedRow = -1
 		var headers []models.ReturHeader
 		var err error
@@ -796,9 +798,9 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 		data = nil
 		for _, h := range headers {
-			if sfilt != "Semua" && h.Status != sfilt {
-				continue
-			}
+			// if sfilt != "Semua" && h.Status != sfilt {
+			// 	continue
+			// }
 			data = append(data, ReturHeaderUI{
 				ID:      h.ID,
 				TglNota: h.ReturDate.Format("2006-01-02"),
@@ -810,7 +812,8 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 	}
 
-	loadData("", "Semua")
+	// loadData("", "Semua")
+	loadData("")
 
 	table := widget.NewTable(
 		func() (int, int) { return len(data) + 1, len(headers) },
@@ -880,14 +883,14 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
-		loadData(keyword, statusFilter.Selected)
+		loadData(keyword)
 		table.Refresh()
 	}
-	statusFilter.OnChanged = func(_ string) {
-		selectedRow = -1
-		loadData(search.Text, statusFilter.Selected)
-		table.Refresh()
-	}
+	// statusFilter.OnChanged = func(_ string) {
+	// 	selectedRow = -1
+	// 	loadData(search.Text, statusFilter.Selected)
+	// 	table.Refresh()
+	// }
 
 	var focusWrapper *focusableTable
 	safeFocus := func() {
@@ -899,7 +902,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	refreshTable := func() {
-		loadData(search.Text, statusFilter.Selected)
+		loadData(search.Text)
 		table.Refresh()
 		safeFocus()
 	}
