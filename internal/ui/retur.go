@@ -40,9 +40,8 @@ type ReturItemUI struct {
 
 func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	// Header form fields
-	tglNota := widget.NewEntry()
-	tglNota.SetText(time.Now().Format("2006-01-02"))
-	tglNota.Disable()
+	tglNota := widget.NewLabel(time.Now().Format("2006-01-02"))
+	tglNota.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Calendar button with calendar icon only
 	calendarBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
@@ -189,7 +188,7 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty - currentInCart)
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty-currentInCart)
 		} else {
 			isSyncing = true
 			namaBarang.SetText("")
@@ -247,7 +246,7 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty - currentInCart)
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty-currentInCart)
 			stockInfo.Refresh()
 		}
 	}
