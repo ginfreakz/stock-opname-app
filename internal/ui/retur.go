@@ -38,7 +38,7 @@ type ReturItemUI struct {
 	Total      string
 }
 
-func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
+func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), existingData *models.ReturFull, isEditMode bool) {
 	// Header form fields
 	tglNota := widget.NewLabel(time.Now().Format("2006-01-02"))
 	tglNota.TextStyle = fyne.TextStyle{Bold: true}
@@ -86,9 +86,28 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	vendor.OnSubmitted = func(st string) { w.Canvas().Focus(kodeBarang) }
 	kodeBarang.OnSubmitted = func(st string) { w.Canvas().Focus(qty) }
 	qty.OnSubmitted = func(st string) { w.Canvas().Focus(harga) }
-
+	// Shared state variables
+	var items []ReturItemUI
+	var itemsTable *widget.Table
 	var selectedItem *models.Item
 	var selectedItemIndex int = -1
+	var isSyncing bool
+
+	// Map untuk menyimpan qty awal item di dalam nota (khusus mode edit)
+	initialQtyMap := make(map[uuid.UUID]float64)
+	if existingData != nil {
+		for _, det := range existingData.Details {
+			initialQtyMap[det.ItemID] += det.Qty
+		}
+	}
+
+	// Refresh options for namaBarang to ensure it has all items
+	allItems, _ = s.ItemRepo.GetAll()
+	itemOptions = []string{}
+	for _, it := range allItems {
+		itemOptions = append(itemOptions, fmt.Sprintf("%s - %s", it.Code, it.Name))
+	}
+	namaBarang.SetOptions(itemOptions)
 
 	clearItemForm := func() {
 		kodeBarang.SetText("")
@@ -103,7 +122,7 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 		stockWarning.Refresh()
 	}
 
-	isSyncing := false
+	isSyncing = false
 
 	namaBarang.OnChanged = func(value string) {
 		if isSyncing {
@@ -120,7 +139,16 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			item, err := s.ItemRepo.GetByCode(parts[0])
 			if err == nil {
 				selectedItem = item
-				stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty)
+				
+				var currentInCart float64
+				for i, row := range items {
+					if row.ItemID == item.ID && i != selectedItemIndex {
+						qtyVal, _ := strconv.ParseFloat(row.Qty, 64)
+						currentInCart += qtyVal
+					}
+				}
+				initialQty := initialQtyMap[item.ID]
+				stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty+initialQty-currentInCart)
 			} else {
 				selectedItem = nil
 				stockInfo.Text = ""
@@ -139,9 +167,6 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			stockWarning.Refresh()
 		}
 	}
-
-	var items []ReturItemUI
-	var itemsTable *widget.Table
 
 	kodeBarang.OnChanged = func(code string) {
 		if isSyncing {
@@ -188,7 +213,10 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", item.Qty-currentInCart)
+			
+			initialQty := initialQtyMap[selectedItem.ID]
+			availableStock := selectedItem.Qty + initialQty - currentInCart
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", availableStock)
 		} else {
 			isSyncing = true
 			namaBarang.SetText("")
@@ -210,7 +238,8 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					currentInCart += qtyVal
 				}
 			}
-			availableStock := selectedItem.Qty - currentInCart
+			initialQty := initialQtyMap[selectedItem.ID]
+			availableStock := selectedItem.Qty + initialQty - currentInCart
 
 			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", availableStock)
 			stockInfo.Refresh()
@@ -246,7 +275,8 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					currentInCart += qtyVal
 				}
 			}
-			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty-currentInCart)
+			initialQty := initialQtyMap[selectedItem.ID]
+			stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", selectedItem.Qty+initialQty-currentInCart)
 			stockInfo.Refresh()
 		}
 	}
@@ -343,7 +373,8 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			}
 		}
 
-		availableStock := selectedItem.Qty - currentInCart
+		initialQty := initialQtyMap[selectedItem.ID]
+		availableStock := selectedItem.Qty + initialQty - currentInCart
 
 		if qtyVal > availableStock {
 			dialog.ShowError(fmt.Errorf("Stok gudang tidak mencukupi untuk diretur! Sisa stok fisik: %.0f", availableStock), w)
@@ -466,13 +497,19 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 					text.Alignment = fyne.TextAlignTrailing
 					text.Show()
 				case 5:
-					text.Hide()
-					btn.OnTapped = func() {
-						rowIndex := id.Row - 1
-						items = append(items[:rowIndex], items[rowIndex+1:]...)
-						refreshItemsTable()
+					if existingData != nil && !isEditMode {
+						btn.Hide()
+						text.Text = ""
+						text.Hide()
+					} else {
+						text.Hide()
+						btn.OnTapped = func() {
+							rowIndex := id.Row - 1
+							items = append(items[:rowIndex], items[rowIndex+1:]...)
+							refreshItemsTable()
+						}
+						btn.Show()
 					}
-					btn.Show()
 				}
 			} else {
 				text.Text = ""
@@ -483,6 +520,9 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	)
 
 	itemsTable.OnSelected = func(id widget.TableCellID) {
+		if existingData != nil && !isEditMode {
+			return
+		}
 		if id.Row > 0 && id.Row-1 < len(items) {
 			selectedRow := id.Row - 1
 			item := items[selectedRow]
@@ -490,12 +530,23 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			if err == nil {
 				selectedItem = it
 				selectedItemIndex = selectedRow
+				isSyncing = true
 				kodeBarang.SetText(item.KodeBarang)
 				namaBarang.SetText(item.NamaBarang)
+				isSyncing = false
 				qty.SetText(item.Qty)
 				harga.SetText(item.Harga)
 
-				stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", it.Qty)
+				initialQty := initialQtyMap[it.ID]
+				var currentInCart float64
+				for i, row := range items {
+					if row.ItemID == it.ID && i != selectedItemIndex {
+						q, _ := strconv.ParseFloat(row.Qty, 64)
+						currentInCart += q
+					}
+				}
+
+				stockInfo.Text = fmt.Sprintf("Stok tersedia: %.0f", it.Qty+initialQty-currentInCart)
 				stockInfo.Refresh()
 
 				updateButtonStates()
@@ -510,6 +561,18 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	itemsTable.SetColumnWidth(4, 120) // Total
 	itemsTable.SetColumnWidth(5, 40)  // Delete
 
+	if existingData != nil && !isEditMode {
+		kodeBarang.Disable()
+		namaBarang.Disable()
+		qty.Disable()
+		harga.Disable()
+		addItemBtn.Hide()
+		deleteItemBtn.Hide()
+		clearBtn.Hide()
+		itemsTable.SetColumnWidth(4, 160) // Absorb Delete button width (120+40)
+		itemsTable.SetColumnWidth(5, 0)
+	}
+
 	var d dialog.Dialog
 	submitBtn := widget.NewButton("Submit", func() {
 		if tglNota.Text == "" || noNota.Text == "" || vendor.Text == "" {
@@ -517,11 +580,13 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			return
 		}
 
-		// Validasi No Nota duplikat
-		existing, _ := s.ReturRepo.GetByInvoiceNum(noNota.Text)
-		if existing != nil {
-			dialog.ShowInformation("Error", "No. Nota sudah terdaftar, silakan gunakan nomor lain!", w)
-			return
+		if !isEditMode {
+			// Validasi No Nota duplikat
+			existing, _ := s.ReturRepo.GetByInvoiceNum(noNota.Text)
+			if existing != nil {
+				dialog.ShowInformation("Error", "No. Nota sudah terdaftar, silakan gunakan nomor lain!", w)
+				return
+			}
 		}
 
 		if len(items) == 0 {
@@ -554,7 +619,21 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 			}
 		}
 
-		_, err := s.ReturRepo.Create(&header, details)
+		if isEditMode && existingData != nil {
+			header.ID = existingData.Header.ID
+			header.CreatedAt = existingData.Header.CreatedAt
+			header.CreatedBy = existingData.Header.CreatedBy
+			now := time.Now()
+			header.UpdatedAt = &now
+			header.UpdatedBy = &s.User.ID
+		}
+
+		var err error
+		if isEditMode && existingData != nil {
+			err = s.ReturRepo.Update(&header, details)
+		} else {
+			_, err = s.ReturRepo.Create(&header, details)
+		}
 
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Gagal menyimpan data: %v", err), w)
@@ -571,9 +650,23 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 
 	cancelBtn := widget.NewButton("Cancel", func() { d.Hide() })
 	cancelBtn.Importance = widget.DangerImportance
-	buttons := container.NewGridWithColumns(2, cancelBtn, submitBtn)
+	var buttons *fyne.Container
+
+	if existingData != nil && !isEditMode {
+		cancelBtn.SetText("Tutup")
+		cancelBtn.Importance = widget.HighImportance
+		buttons = container.NewGridWithColumns(1, cancelBtn)
+		submitBtn.Hide()
+	} else {
+		buttons = container.NewGridWithColumns(2, cancelBtn, submitBtn)
+	}
 
 	labelText := "Isi Data Retur Pembelian"
+	if isEditMode {
+		labelText = "Edit Data Retur"
+	} else if existingData != nil {
+		labelText = "Detail Retur"
+	}
 
 	tableSection := container.NewBorder(
 		nil,
@@ -593,25 +686,61 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 		}(),
 	)
 
+	topContent := container.NewVBox(
+		container.NewCenter(widget.NewLabelWithStyle(
+			"MENU RETUR PEMBELIAN",
+			fyne.TextAlignCenter,
+			fyne.TextStyle{Bold: true},
+		)),
+		container.NewCenter(widget.NewLabelWithStyle(
+			labelText,
+			fyne.TextAlignCenter,
+			fyne.TextStyle{},
+		)),
+		widget.NewSeparator(),
+	)
+
+	if existingData != nil {
+		formattedDate := existingData.Header.ReturDate.Format("2006-01-02")
+		tglNota.SetText(formattedDate)
+		noNota.SetText(existingData.Header.ReturInvoiceNum)
+		vendor.SetText(existingData.Header.SupplierName)
+
+		displayItems := LoadReturDisplayItems(s, existingData.Details)
+		items = make([]ReturItemUI, len(displayItems))
+		for i, v := range displayItems {
+			items[i] = ReturItemUI{
+				ItemID:     existingData.Details[i].ItemID,
+				KodeBarang: v.Code,
+				NamaBarang: v.Name,
+				Qty:        v.Qty,
+				Harga:      v.Price,
+				Total:      v.Total,
+			}
+		}
+
+		if !isEditMode {
+			noNota.Disable()
+			vendor.Disable()
+			calendarBtn.Disable()
+		}
+		
+		recalculateTotal()
+	}
+
+	if existingData != nil && !isEditMode {
+		topContent.Add(headerForm)
+		topContent.Add(headerFormSeparator)
+	} else {
+		topContent.Add(headerForm)
+		topContent.Add(headerFormSeparator)
+		topContent.Add(itemForm)
+		topContent.Add(itemFormButtons)
+		topContent.Add(itemFormSeparator)
+	}
+
 	content := container.NewBorder(
-		container.NewVBox(
-			container.NewCenter(widget.NewLabelWithStyle(
-				"MENU RETUR PEMBELIAN",
-				fyne.TextAlignCenter,
-				fyne.TextStyle{Bold: true},
-			)),
-			container.NewCenter(widget.NewLabelWithStyle(
-				labelText,
-				fyne.TextAlignCenter,
-				fyne.TextStyle{},
-			)),
-			widget.NewSeparator(),
-			headerForm,
-			headerFormSeparator,
-			itemForm,
-			itemFormButtons,
-			itemFormSeparator,
-		),
+		topContent,
 		buttons,
 		nil,
 		nil,
@@ -624,11 +753,13 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func()) {
 	d.Resize(fyne.NewSize(750, 600))
 	d.Show()
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		fyne.Do(func() {
-			w.Canvas().Focus(noNota)
+	if !(existingData != nil && !isEditMode) {
+		time.AfterFunc(100*time.Millisecond, func() {
+			fyne.Do(func() {
+				w.Canvas().Focus(noNota)
+			})
 		})
-	})
+	}
 }
 
 func showViewReturDialog(w fyne.Window, s *state.Session, headerID uuid.UUID) {
@@ -780,6 +911,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	var data []ReturHeaderUI
 	var selectedRow int = -1
+	var refreshTable func()
 
 	// loadData := func(keyword string, sfilt string) {
 	loadData := func(keyword string) {
@@ -820,12 +952,20 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			text := canvas.NewText("", color.Black)
 			text.TextSize = 13
-			return container.NewMax(bg, text)
+			
+			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil)
+			editBtn.Importance = widget.LowImportance
+			return container.NewMax(bg, text, container.NewCenter(editBtn))
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			cont := cell.(*fyne.Container)
 			bg := cont.Objects[0].(*canvas.Rectangle)
 			text := cont.Objects[1].(*canvas.Text)
+			
+			btnCont := cont.Objects[2].(*fyne.Container)
+			editBtn := btnCont.Objects[0].(*widget.Button)
+			editBtn.Hide()
+			text.Show()
 			if id.Row == 0 {
 				bg.FillColor = headerBg
 				text.Text = headers[id.Col]
@@ -870,6 +1010,29 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				case 3:
 					text.Text = item.Total
 					text.Alignment = fyne.TextAlignCenter
+				case 4:
+					text.Text = ""
+					text.Hide()
+					editBtnID := item.ID
+					editBtnStatus := item.Status
+					if editBtnStatus == "VOID" {
+						editBtn.Disable()
+					} else {
+						editBtn.Enable()
+					}
+					editBtn.OnTapped = func() {
+						if editBtnStatus == "VOID" {
+							dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
+							return
+						}
+						retur, err := s.ReturRepo.GetByID(editBtnID)
+						if err != nil {
+							dialog.ShowError(err, w)
+							return
+						}
+						showReturDialog(w, s, refreshTable, retur, true)
+					}
+					editBtn.Show()
 				}
 			}
 		},
@@ -878,7 +1041,8 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(0, 150)
 	table.SetColumnWidth(1, 240)
 	table.SetColumnWidth(2, 290)
-	table.SetColumnWidth(3, 240)
+	table.SetColumnWidth(3, 190)
+	table.SetColumnWidth(4, 50) // Edit button
 
 	search.OnChanged = func(keyword string) {
 		selectedRow = -1
@@ -900,7 +1064,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 	}
 
-	refreshTable := func() {
+	refreshTable = func() {
 		loadData(search.Text)
 		table.Refresh()
 		safeFocus()
@@ -917,13 +1081,36 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 		case fyne.KeyInsert:
 			lastDialogTime = time.Now()
-			showReturDialog(w, s, refreshTable)
+			showReturDialog(w, s, refreshTable, nil, false)
+
+		// Edit nota
+		case fyne.KeyE:
+			lastDialogTime = time.Now()
+			if selectedRow >= 0 && selectedRow < len(data) {
+				if data[selectedRow].Status == "VOID" {
+					dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
+					return
+				}
+				retur, err := s.ReturRepo.GetByID(data[selectedRow].ID)
+				if err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				showReturDialog(w, s, refreshTable, retur, true)
+			} else {
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
 
 		// Show View details
 		case fyne.KeyV:
 			lastDialogTime = time.Now()
 			if selectedRow >= 0 && selectedRow < len(data) {
-				showViewReturDialog(w, s, data[selectedRow].ID)
+				retur, err := s.ReturRepo.GetByID(data[selectedRow].ID)
+				if err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				showReturDialog(w, s, refreshTable, retur, false)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
@@ -1029,7 +1216,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	w.Canvas().SetOnTypedKey(handleKey)
 
 	tableWrapper := container.NewCenter(container.NewGridWrap(fyne.NewSize(950, 480), focusWrapper))
-	footer := canvas.NewText("[Insert] Add Retur  [V] View Detail  [Del] Void", color.White)
+	footer := canvas.NewText("[Insert] Add Retur  [V] View Detail  [E] Edit  [Del] Void", color.White)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
 	content := container.NewBorder(header, footer, nil, nil, tableWrapper)

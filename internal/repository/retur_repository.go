@@ -112,6 +112,97 @@ func (r *ReturRepository) Create(header *models.ReturHeader, details []models.Re
 	return header.ID, nil
 }
 
+// Update modifies an existing ReturPembelian header and its details within a database transaction.
+// It reverts the old stock changes, deletes old details, updates the header, inserts new details,
+// and applies new stock changes. Returns an error if any step fails.
+func (r *ReturRepository) Update(header *models.ReturHeader, details []models.ReturDetail) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Dapatkan detail lama untuk mengembalikan stok
+	var oldDetails []models.ReturDetail
+	err = tx.Select(&oldDetails, `SELECT item_id, qty FROM retur_details WHERE header_id = $1`, header.ID)
+	if err != nil {
+		return fmt.Errorf("gagal mengambil detail lama: %v", err)
+	}
+
+	// 2. Kembalikan stok lama (karena retur memotong stok, kita kembalikan dengan menambah)
+	for _, d := range oldDetails {
+		_, err = tx.Exec(`UPDATE items SET qty = qty + $1 WHERE id = $2`, d.Qty, d.ItemID)
+		if err != nil {
+			return fmt.Errorf("gagal mengembalikan stok lama: %v", err)
+		}
+	}
+
+	// 3. Hapus detail lama
+	_, err = tx.Exec(`DELETE FROM retur_details WHERE header_id = $1`, header.ID)
+	if err != nil {
+		return fmt.Errorf("gagal menghapus detail lama: %v", err)
+	}
+
+	// 4. Update header
+	headerQuery := `UPDATE retur_headers 
+		SET retur_invoice_num = $1, retur_date = $2, supplier_name = $3, total_amount = $4, updated_at = $5, updated_by = $6 
+		WHERE id = $7`
+	_, err = tx.Exec(headerQuery, header.ReturInvoiceNum, header.ReturDate, header.SupplierName, header.TotalAmount, header.UpdatedAt, header.UpdatedBy, header.ID)
+	if err != nil {
+		return fmt.Errorf("gagal memperbarui header: %v", err)
+	}
+
+	// 5. Insert detail baru dan update stok baru
+	for i := range details {
+		detail := &details[i]
+		detail.ID = uuid.New()
+		detail.HeaderID = header.ID
+		detail.CreatedAt = *header.UpdatedAt // use updated_at as created_at for details since they are new
+
+		detailQuery := `INSERT INTO retur_details 
+			(id, header_id, item_id, qty, price_amount, total_amount, created_at) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`
+
+		_, err = tx.Exec(
+			detailQuery,
+			detail.ID,
+			detail.HeaderID,
+			detail.ItemID,
+			detail.Qty,
+			detail.PriceAmount,
+			detail.TotalAmount,
+			detail.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("gagal menyimpan detail baru: %v", err)
+		}
+
+		// Validasi stok baru
+		if detail.Qty <= 0 {
+			return errors.New("retur gagal: jumlah retur harus lebih besar dari 0")
+		}
+
+		var currentQty float64
+		err = tx.Get(&currentQty, `SELECT qty FROM items WHERE id = $1`, detail.ItemID)
+		if err != nil {
+			return fmt.Errorf("gagal mengecek stok barang: %v", err)
+		}
+
+		if detail.Qty > currentQty {
+			return errors.New("retur gagal: jumlah retur melebihi stok yang tersedia saat ini")
+		}
+
+		// Update stok baru (kurangi stok)
+		updateItemQuery := `UPDATE items SET qty = qty - $1 WHERE id = $2`
+		_, err = tx.Exec(updateItemQuery, detail.Qty, detail.ItemID)
+		if err != nil {
+			return fmt.Errorf("gagal memperbarui stok barang: %v", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 // GetAll retrieves all Retur headers
 func (r *ReturRepository) GetAll() ([]models.ReturHeader, error) {
 	var headers []models.ReturHeader

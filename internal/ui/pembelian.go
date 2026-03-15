@@ -39,7 +39,7 @@ type PembelianItem struct {
 	Total      string
 }
 
-func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func(), existingData *models.PurchaseFull) {
+func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func(), existingData *models.PurchaseFull, isEditMode bool) {
 	// Header form fields
 	tglNota := widget.NewLabel(time.Now().Format("2006-01-02"))
 	tglNota.TextStyle = fyne.TextStyle{Bold: true}
@@ -90,6 +90,15 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	var selectedItem *models.Item
 	var selectedItemIndex int = -1
+	var isSyncing bool
+
+	// Map untuk menyimpan qty awal item di dalam nota (khusus mode edit)
+	originalQtyMap := make(map[uuid.UUID]float64)
+	if existingData != nil {
+		for _, det := range existingData.Details {
+			originalQtyMap[det.ItemID] += det.Qty
+		}
+	}
 
 	clearItemForm := func() {
 		kodeBarang.SetText("")
@@ -104,7 +113,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		stockWarning.Refresh()
 	}
 
-	isSyncing := false
+	isSyncing = false
 
 	namaBarang.OnChanged = func(value string) {
 		if isSyncing {
@@ -205,10 +214,20 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			// Let's just put info and warning logic. If the user wants a warning in Pembelian? Maybe not for "Stok kurang!" since we are adding stock.
 			// The user just said "warning yang kayak sebelumnya".
 			if err == nil {
-				// We don't necessarily warn about "qty > stock" in pembelian, but maybe something else?
-				// I'll leave the red text empty for now unless it's negative.
 				if v < 0 {
 					stockWarning.Text = "Qty minus!"
+				} else if isEditMode {
+					originalQty := originalQtyMap[selectedItem.ID]
+					if originalQty > 0 {
+						reduction := originalQty - v
+						if reduction > selectedItem.Qty {
+							stockWarning.Text = "Stok tidak cukup (akan negatif)!"
+						} else {
+							stockWarning.Text = ""
+						}
+					} else {
+						stockWarning.Text = ""
+					}
 				} else {
 					stockWarning.Text = ""
 				}
@@ -269,10 +288,12 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			}
 		}
 
-		// Lock header inputs
-		noNota.Disable()
-		vendor.Disable()
-		calendarBtn.Disable()
+		// Lock header inputs in read-only mode, or partially in edit mode
+		if !isEditMode {
+			noNota.Disable()
+			vendor.Disable()
+			calendarBtn.Disable()
+		}
 	}
 	recalculateTotal()
 	refreshItemsTable := func() {
@@ -339,6 +360,18 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Harga harus berupa angka!"), w)
 			return
+		}
+
+		// Validasi stok negatif di pembelian (Edit Mode)
+		if isEditMode {
+			originalQty := originalQtyMap[selectedItem.ID]
+			if originalQty > 0 {
+				reduction := originalQty - qtyVal
+				if reduction > selectedItem.Qty {
+					dialog.ShowError(fmt.Errorf("Gagal Update: Pengurangan QTY (%v) melebihi stok yang ada (%v). Stok akan menjadi negatif!", reduction, selectedItem.Qty), w)
+					return
+				}
+			}
 		}
 
 		total := qtyVal * hargaVal
@@ -453,7 +486,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 					text.Alignment = fyne.TextAlignTrailing
 					text.Show()
 				case 5:
-					if existingData != nil {
+					if existingData != nil && !isEditMode {
 						btn.Hide()
 						text.Text = ""
 						text.Hide()
@@ -476,7 +509,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	)
 
 	itemsTable.OnSelected = func(id widget.TableCellID) {
-		if existingData != nil {
+		if existingData != nil && !isEditMode {
 			return // Disable selection for existing data (read-only)
 		}
 		if id.Row > 0 && id.Row-1 < len(items) {
@@ -486,8 +519,10 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			if err == nil {
 				selectedItem = it
 				selectedItemIndex = selectedRow
+				isSyncing = true
 				kodeBarang.SetText(item.KodeBarang)
 				namaBarang.SetText(item.NamaBarang)
+				isSyncing = false
 				qty.SetText(item.Qty)
 				harga.SetText(item.Harga)
 				updateButtonStates()
@@ -502,7 +537,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	itemsTable.SetColumnWidth(4, 120) // Total
 	itemsTable.SetColumnWidth(5, 40)  // Delete
 
-	if existingData != nil {
+	if existingData != nil && !isEditMode {
 		kodeBarang.Disable()
 		namaBarang.Disable()
 		qty.Disable()
@@ -521,7 +556,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			return
 		}
 
-		if existingData == nil {
+		if !isEditMode {
 			// Validasi No Nota duplikat
 			existing, _ := s.PurchaseRepo.GetByInvoiceNum(noNota.Text)
 			if existing != nil {
@@ -573,7 +608,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 
 		var err error
-		if existingData != nil {
+		if isEditMode && existingData != nil {
 			err = s.PurchaseRepo.Update(purchase)
 		} else {
 			err = s.PurchaseRepo.Create(purchase)
@@ -605,16 +640,19 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	var buttons *fyne.Container
 
-	if existingData != nil {
+	if existingData != nil && !isEditMode {
 		cancelBtn.SetText("Tutup")
 		cancelBtn.Importance = widget.HighImportance
 		buttons = container.NewGridWithColumns(1, cancelBtn)
+		submitBtn.Hide()
 	} else {
 		buttons = container.NewGridWithColumns(2, cancelBtn, submitBtn)
 	}
 
 	labelText := "Nota Baru"
-	if existingData != nil {
+	if isEditMode {
+		labelText = "Edit Nota"
+	} else if existingData != nil {
 		labelText = "Detail Nota"
 	}
 
@@ -652,7 +690,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		widget.NewSeparator(),
 	)
 
-	if existingData != nil {
+	if existingData != nil && !isEditMode {
 		topContent.Add(headerForm)
 		topContent.Add(headerFormSeparator)
 		// Hide item input form entirely
@@ -686,7 +724,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	d.Show()
 
 	// Initial focus on Kode Barang first to encourage item adding
-	if existingData == nil {
+	if !(existingData != nil && !isEditMode) {
 		time.AfterFunc(100*time.Millisecond, func() {
 			fyne.Do(func() {
 				w.Canvas().Focus(kodeBarang)
@@ -846,6 +884,8 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	var data []PembelianHeader
 	var selectedRow int = -1
+	var refreshTable func()
+	var isDialogOpen bool
 
 	// loadData := func(keyword string, sfilt string) {
 	loadData := func(keyword string) {
@@ -886,12 +926,20 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			text := canvas.NewText("", color.Black)
 			text.TextSize = 13
-			return container.NewMax(bg, text)
+			
+			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil)
+			editBtn.Importance = widget.LowImportance
+			return container.NewMax(bg, text, container.NewCenter(editBtn))
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			cont := cell.(*fyne.Container)
 			bg := cont.Objects[0].(*canvas.Rectangle)
 			text := cont.Objects[1].(*canvas.Text)
+			
+			btnCont := cont.Objects[2].(*fyne.Container)
+			editBtn := btnCont.Objects[0].(*widget.Button)
+			editBtn.Hide()
+			text.Show()
 			if id.Row == 0 {
 				bg.FillColor = headerBg
 				text.Text = headers[id.Col]
@@ -936,6 +984,30 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				case 3:
 					text.Text = item.Total
 					text.Alignment = fyne.TextAlignCenter
+				case 4:
+					text.Text = ""
+					text.Hide()
+					editBtnID := item.ID
+					editBtnStatus := item.Status
+					if editBtnStatus == "VOID" {
+						editBtn.Disable()
+					} else {
+						editBtn.Enable()
+					}
+					editBtn.OnTapped = func() {
+						if editBtnStatus == "VOID" {
+							dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
+							return
+						}
+						purchase, err := s.PurchaseRepo.GetByID(editBtnID)
+						if err != nil {
+							dialog.ShowError(err, w)
+							return
+						}
+						isDialogOpen = true
+						showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, purchase, true)
+					}
+					editBtn.Show()
 				}
 			}
 		},
@@ -944,7 +1016,8 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	table.SetColumnWidth(0, 150)
 	table.SetColumnWidth(1, 240)
 	table.SetColumnWidth(2, 290)
-	table.SetColumnWidth(3, 240)
+	table.SetColumnWidth(3, 190)
+	table.SetColumnWidth(4, 50) // Edit button
 
 	// enable live searching
 	search.OnChanged = func(keyword string) {
@@ -967,14 +1040,13 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 	}
 
-	refreshTable := func() {
+	refreshTable = func() {
 		loadData(search.Text)
 		table.Refresh()
 		safeFocus()
 	}
 
 	var lastDialogTime time.Time
-	var isDialogOpen bool
 
 	handleKey := func(k *fyne.KeyEvent) {
 		if time.Since(lastDialogTime) < 500*time.Millisecond || isDialogOpen {
@@ -987,7 +1059,26 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		case fyne.KeyInsert:
 			lastDialogTime = time.Now()
 			isDialogOpen = true
-			showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, nil)
+			showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, nil, false)
+
+		// Edit nota
+		case fyne.KeyE:
+			lastDialogTime = time.Now()
+			if selectedRow >= 0 && selectedRow < len(data) {
+				if data[selectedRow].Status == "VOID" {
+					dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
+					return
+				}
+				purchase, err := s.PurchaseRepo.GetByID(data[selectedRow].ID)
+				if err != nil {
+					dialog.ShowError(err, w)
+					return
+				}
+				isDialogOpen = true
+				showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, purchase, true)
+			} else {
+				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
+			}
 
 		// Preview
 		case fyne.KeyV:
@@ -999,7 +1090,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					return
 				}
 				isDialogOpen = true
-				showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, purchase)
+				showPembelianDialog(w, s, func() { isDialogOpen = false; refreshTable() }, purchase, false)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
