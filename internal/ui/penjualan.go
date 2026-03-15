@@ -46,10 +46,8 @@ type PenjualanFull struct {
 
 func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func(), existingData *models.SellFull, isEditMode bool) {
 	// Header form fields
-	tglNota := widget.NewEntry()
-	tglNota.SetText(time.Now().Format("2006-01-02"))
-	// disable the entry so user can't type or select
-	tglNota.Disable()
+	tglNota := widget.NewLabel(time.Now().Format("2006-01-02"))
+	tglNota.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Calendar button with calendar icon only
 	calendarBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
@@ -323,11 +321,12 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			}
 		}
 
-		// Lock header inputs
-		tglNota.Disable()
-		noNota.Disable()
-		customer.Disable()
-		calendarBtn.Disable()
+		// Lock header inputs only in read-only mode
+		if !isEditMode {
+			noNota.Disable()
+			customer.Disable()
+			calendarBtn.Disable()
+		}
 
 		recalculateTotal()
 	}

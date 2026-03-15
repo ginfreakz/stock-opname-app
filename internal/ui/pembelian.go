@@ -41,9 +41,8 @@ type PembelianItem struct {
 
 func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func(), existingData *models.PurchaseFull) {
 	// Header form fields
-	tglNota := widget.NewEntry()
-	tglNota.SetText(time.Now().Format("2006-01-02"))
-	tglNota.Disable() // Disable manual input
+	tglNota := widget.NewLabel(time.Now().Format("2006-01-02"))
+	tglNota.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Calendar button with calendar icon only
 	calendarBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
@@ -271,7 +270,6 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 
 		// Lock header inputs
-		tglNota.Disable()
 		noNota.Disable()
 		vendor.Disable()
 		calendarBtn.Disable()
