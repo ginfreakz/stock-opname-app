@@ -464,6 +464,7 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		color.White,
 	)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
+	footer.Alignment = fyne.TextAlignCenter
 
 	// Content
 	content := container.NewBorder(header, footer, nil, nil, tableWrapper)

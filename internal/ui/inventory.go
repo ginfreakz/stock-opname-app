@@ -238,6 +238,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		"QTY",
 		"Harga",
 		"Harga Modal",
+		"Aksi",
 	}
 
 	var data []InventoryItem
@@ -325,6 +326,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	selectedBg := color.NRGBA{R: 100, G: 150, B: 255, A: 255}
 
 	// ===== TABLE =====
+	var refreshTable func()
 	table := widget.NewTable(
 		func() (int, int) {
 			return len(data) + 1, len(headers)
@@ -333,12 +335,22 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			cellBg := canvas.NewRectangle(color.Transparent)
 			text := canvas.NewText("", color.Black)
 			text.TextSize = 13
-			return container.NewMax(cellBg, text)
+			
+			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil)
+			editBtn.Importance = widget.LowImportance
+			
+			return container.NewMax(cellBg, text, container.NewCenter(editBtn))
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 			objects := cell.(*fyne.Container).Objects
 			cellBg := objects[0].(*canvas.Rectangle)
 			text := objects[1].(*canvas.Text)
+			
+			btnCont := objects[2].(*fyne.Container)
+			editBtn := btnCont.Objects[0].(*widget.Button)
+			
+			editBtn.Hide()
+			text.Show()
 
 			if id.Row == 0 {
 				cellBg.FillColor = headerBg
@@ -388,6 +400,19 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				case 4:
 					text.Text = item.HargaModal
 					text.Alignment = fyne.TextAlignTrailing
+				case 5:
+					text.Text = ""
+					text.Hide()
+					
+					selectedItem := item
+					editBtn.OnTapped = func() {
+						if dialogOpen {
+							return
+						}
+						dialogOpen = true
+						showEditInventoryDialog(w, s, selectedItem, &dialogOpen, refreshTable)
+					}
+					editBtn.Show()
 				}
 			}
 
@@ -405,7 +430,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		w.Canvas().Focus(focusWrapper)
 	}
 
-	refreshTable := func() {
+	refreshTable = func() {
 		selectedRow = -1
 		loadData(search.Text)
 		table.Refresh()
@@ -447,10 +472,11 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// ===== COLUMN WIDTH =====
 	table.SetColumnWidth(0, 120)
-	table.SetColumnWidth(1, 350)
+	table.SetColumnWidth(1, 420) // Absorbed some extra space
 	table.SetColumnWidth(2, 100)
 	table.SetColumnWidth(3, 180)
-	table.SetColumnWidth(4, 180)
+	table.SetColumnWidth(4, 160)
+	table.SetColumnWidth(5, 50)  // Aksi (Edit button)
 
 	// Search functionality
 	search.OnChanged = func(keyword string) {

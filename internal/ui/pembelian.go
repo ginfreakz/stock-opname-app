@@ -1219,6 +1219,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	tableWrapper := container.NewCenter(container.NewGridWrap(fyne.NewSize(950, 480), focusWrapper))
 	footer := canvas.NewText("[Insert] Nota Baru  [V] Preview Nota  [Del] Void", color.White)
 	footer.TextStyle = fyne.TextStyle{Italic: true}
+	footer.Alignment = fyne.TextAlignCenter
 
 	content := container.NewBorder(header, footer, nil, nil, tableWrapper)
 	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
