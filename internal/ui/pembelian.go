@@ -889,7 +889,6 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	// loadData := func(keyword string, sfilt string) {
 	loadData := func(keyword string) {
-		selectedRow = -1
 		var headers []models.PurchaseHeader
 		var err error
 		if keyword == "" {
@@ -1015,7 +1014,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	table.SetColumnWidth(0, 150)
 	table.SetColumnWidth(1, 240)
-	table.SetColumnWidth(2, 290)
+	table.SetColumnWidth(2, 355)
 	table.SetColumnWidth(3, 190)
 	table.SetColumnWidth(4, 50) // Edit button
 

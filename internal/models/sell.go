@@ -33,3 +33,9 @@ type SellFull struct {
 	Header  SellHeader
 	Details []SellDetail
 }
+
+type DailySalesReport struct {
+	SellDate         time.Time `db:"sell_date"`
+	TransactionCount int       `db:"transaction_count"`
+	TotalAmount      float64   `db:"total_amount"`
+}

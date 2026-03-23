@@ -198,6 +198,9 @@ func HomePage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	btnRetur := widget.NewButton("Retur Pembelian", func() {
 		w.SetContent(ReturPage(w, s))
 	})
+	btnLaporan := widget.NewButton("Laporan Penjualan Harian", func() {
+		w.SetContent(LaporanPenjualanPage(w, s))
+	})
 	btnHapus := widget.NewButton("Hapus Data", func() {
 		showDeleteDataDialog(w, s)
 	})
@@ -219,6 +222,7 @@ func HomePage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		btnPenjualan,
 		btnPembelian,
 		btnRetur,
+		btnLaporan,
 		btnInventory,
 		btnHapus,
 		separator,
