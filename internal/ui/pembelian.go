@@ -53,8 +53,18 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	calendarBtn.Importance = widget.LowImportance
 
 	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
+	
+	// Use Labels in preview mode, Entries in edit/new mode
+	var noNotaWidget fyne.CanvasObject
+	var vendorWidget fyne.CanvasObject
+	
 	noNota := widget.NewEntry()
 	vendor := widget.NewEntry()
+	
+	noNotaLabel := widget.NewLabel("")
+	noNotaLabel.TextStyle = fyne.TextStyle{Bold: false}
+	vendorLabel := widget.NewLabel("")
+	vendorLabel.TextStyle = fyne.TextStyle{Bold: false}
 
 	// Item entry fields
 	kodeBarang := widget.NewEntry()
@@ -261,19 +271,34 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		return sum
 	}
 
-	// Header form definition
+	// Header form definition - determine which widgets to use based on mode
+	if existingData != nil && !isEditMode {
+		// Preview mode: use Labels for disabled fields
+		noNotaLabel.SetText(existingData.Header.PurchaseInvoiceNum)
+		vendorLabel.SetText(existingData.Header.SupplierName)
+		noNotaWidget = noNotaLabel
+		vendorWidget = vendorLabel
+		calendarBtn.Disable()
+	} else {
+		// New or Edit mode: use Entry fields
+		noNotaWidget = noNota
+		vendorWidget = vendor
+	}
+	
 	headerForm := widget.NewForm(
 		widget.NewFormItem("Tgl. Nota", tglNotaContainer),
-		widget.NewFormItem("No. Nota", noNota),
-		widget.NewFormItem("Vendor", vendor),
+		widget.NewFormItem("No. Nota", noNotaWidget),
+		widget.NewFormItem("Vendor", vendorWidget),
 	)
 	headerFormSeparator := widget.NewSeparator()
 
 	if existingData != nil {
 		formattedDate := existingData.Header.PurchaseDate.Format("2006-01-02")
 		tglNota.SetText(formattedDate)
-		noNota.SetText(existingData.Header.PurchaseInvoiceNum)
-		vendor.SetText(existingData.Header.SupplierName)
+		if isEditMode {
+			noNota.SetText(existingData.Header.PurchaseInvoiceNum)
+			vendor.SetText(existingData.Header.SupplierName)
+		}
 
 		displayItems := LoadPurchaseDisplayItems(s, existingData.Details)
 		items = make([]PembelianItem, len(displayItems))
@@ -288,11 +313,9 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			}
 		}
 
-		// Lock header inputs in read-only mode, or partially in edit mode
-		if !isEditMode {
-			noNota.Disable()
-			vendor.Disable()
-			calendarBtn.Disable()
+		// Lock header inputs in edit mode only
+		if isEditMode {
+			// In edit mode, no additional locking needed for purchase date
 		}
 	}
 	recalculateTotal()

@@ -52,8 +52,18 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), ex
 	calendarBtn.Importance = widget.LowImportance
 
 	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
+	
+	// Use Labels in preview mode, Entries in edit/new mode
+	var noNotaWidget fyne.CanvasObject
+	var vendorWidget fyne.CanvasObject
+	
 	noNota := widget.NewEntry()
 	vendor := widget.NewEntry()
+	
+	noNotaLabel := widget.NewLabel("")
+	noNotaLabel.TextStyle = fyne.TextStyle{Bold: false}
+	vendorLabel := widget.NewLabel("")
+	vendorLabel.TextStyle = fyne.TextStyle{Bold: false}
 
 	// Item entry fields
 	kodeBarang := widget.NewEntry()
@@ -422,10 +432,24 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), ex
 
 	updateButtonStates()
 
+	// Header form definition - determine which widgets to use based on mode
+	if existingData != nil && !isEditMode {
+		// Preview mode: use Labels for disabled fields
+		noNotaLabel.SetText(existingData.Header.ReturInvoiceNum)
+		vendorLabel.SetText(existingData.Header.SupplierName)
+		noNotaWidget = noNotaLabel
+		vendorWidget = vendorLabel
+		calendarBtn.Disable()
+	} else {
+		// New or Edit mode: use Entry fields
+		noNotaWidget = noNota
+		vendorWidget = vendor
+	}
+	
 	headerForm := widget.NewForm(
 		widget.NewFormItem("Tgl. Nota", tglNotaContainer),
-		widget.NewFormItem("No. Nota", noNota),
-		widget.NewFormItem("Vendor", vendor),
+		widget.NewFormItem("No. Nota", noNotaWidget),
+		widget.NewFormItem("Vendor", vendorWidget),
 	)
 	headerFormSeparator := widget.NewSeparator()
 
@@ -708,8 +732,10 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), ex
 	if existingData != nil {
 		formattedDate := existingData.Header.ReturDate.Format("2006-01-02")
 		tglNota.SetText(formattedDate)
-		noNota.SetText(existingData.Header.ReturInvoiceNum)
-		vendor.SetText(existingData.Header.SupplierName)
+		if isEditMode {
+			noNota.SetText(existingData.Header.ReturInvoiceNum)
+			vendor.SetText(existingData.Header.SupplierName)
+		}
 
 		displayItems := LoadReturDisplayItems(s, existingData.Details)
 		items = make([]ReturItemUI, len(displayItems))
@@ -724,10 +750,9 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), ex
 			}
 		}
 
-		if !isEditMode {
-			noNota.Disable()
-			vendor.Disable()
-			calendarBtn.Disable()
+		// Lock header inputs in edit mode only
+		if isEditMode {
+			// In edit mode, no additional locking needed
 		}
 		
 		recalculateTotal()

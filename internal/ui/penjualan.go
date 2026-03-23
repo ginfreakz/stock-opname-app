@@ -59,8 +59,17 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
 
+	// Use Labels in preview mode, Entries in edit/new mode
+	var noNotaWidget fyne.CanvasObject
+	var customerWidget fyne.CanvasObject
+	
 	noNota := widget.NewEntry()
 	customer := widget.NewEntry()
+	
+	noNotaLabel := widget.NewLabel("")
+	noNotaLabel.TextStyle = fyne.TextStyle{Bold: false}
+	customerLabel := widget.NewLabel("")
+	customerLabel.TextStyle = fyne.TextStyle{Bold: false}
 
 	// Item entry fields
 	kodeBarang := widget.NewEntry()
@@ -293,11 +302,25 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		}
 	}
 
+	// Header form definition - determine which widgets to use based on mode
+	if existingData != nil && !isEditMode {
+		// Preview mode: use Labels for disabled fields
+		noNotaLabel.SetText(existingData.Header.SellInvoiceNum)
+		customerLabel.SetText(existingData.Header.CustomerName)
+		noNotaWidget = noNotaLabel
+		customerWidget = customerLabel
+		calendarBtn.Disable()
+	} else {
+		// New or Edit mode: use Entry fields
+		noNotaWidget = noNota
+		customerWidget = customer
+	}
+	
 	// Header form
 	headerForm := widget.NewForm(
 		widget.NewFormItem("Tgl. Nota", tglNotaContainer),
-		widget.NewFormItem("No. Nota", noNota),
-		widget.NewFormItem("Customer", customer),
+		widget.NewFormItem("No. Nota", noNotaWidget),
+		widget.NewFormItem("Customer", customerWidget),
 	)
 	headerFormSeparator := widget.NewSeparator()
 
@@ -305,8 +328,10 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	if existingData != nil {
 		formattedDate := existingData.Header.SellDate.Format("2006-01-02")
 		tglNota.SetText(formattedDate)
-		noNota.SetText(existingData.Header.SellInvoiceNum)
-		customer.SetText(existingData.Header.CustomerName)
+		if isEditMode {
+			noNota.SetText(existingData.Header.SellInvoiceNum)
+			customer.SetText(existingData.Header.CustomerName)
+		}
 
 		displayItems := LoadSellDisplayItems(s, existingData.Details)
 		items = make([]PenjualanItem, len(displayItems))
@@ -321,11 +346,9 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 			}
 		}
 
-		// Lock header inputs only in read-only mode
-		if !isEditMode {
-			noNota.Disable()
-			customer.Disable()
-			calendarBtn.Disable()
+		// Lock header inputs in edit mode only
+		if isEditMode {
+			// In edit mode, no additional locking needed
 		}
 
 		recalculateTotal()
