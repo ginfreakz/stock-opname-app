@@ -270,3 +270,45 @@ func (r *SellRepository) Void(id uuid.UUID, updatedBy uuid.UUID) error {
 
 	return tx.Commit()
 }
+
+func (r *SellRepository) GetDailyReport(startDate, endDate time.Time) ([]models.DailySalesReport, error) {
+	var reports []models.DailySalesReport
+	query := `SELECT DATE(sell_date) as sell_date, 
+			  COUNT(*) as transaction_count, 
+			  COALESCE(SUM(total_amount), 0) as total_amount
+			  FROM sell_headers 
+			  WHERE status = 'ACTIVE'
+			  AND sell_date >= $1 AND sell_date <= $2
+			  GROUP BY DATE(sell_date)
+			  ORDER BY DATE(sell_date) DESC`
+
+	err := r.db.Select(&reports, query, startDate, endDate)
+	return reports, err
+}
+
+func (r *SellRepository) GetByDate(date time.Time) ([]models.SellHeader, error) {
+	var headers []models.SellHeader
+	query := `SELECT id, sell_invoice_num, sell_date, customer_name, total_amount,
+			  status, created_at, updated_at, created_by, updated_by
+			  FROM sell_headers
+			  WHERE DATE(sell_date) = DATE($1)
+			  ORDER BY created_at DESC`
+
+	err := r.db.Select(&headers, query, date)
+	return headers, err
+}
+
+func (r *SellRepository) GetDailyReportByStatus(startDate, endDate time.Time, status string) ([]models.DailySalesReport, error) {
+	var reports []models.DailySalesReport
+	query := `SELECT DATE(sell_date) as sell_date, 
+			  COUNT(*) as transaction_count, 
+			  COALESCE(SUM(total_amount), 0) as total_amount
+			  FROM sell_headers 
+			  WHERE status = $1
+			  AND sell_date >= $2 AND sell_date <= $3
+			  GROUP BY DATE(sell_date)
+			  ORDER BY DATE(sell_date) DESC`
+
+	err := r.db.Select(&reports, query, status, startDate, endDate)
+	return reports, err
+}

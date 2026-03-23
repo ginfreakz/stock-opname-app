@@ -145,3 +145,8 @@ func LoadReturDisplayItems(s *state.Session, details []models.ReturDetail) []Dis
 
 	return items
 }
+
+// containsCI performs a case-insensitive substring search
+func containsCI(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}

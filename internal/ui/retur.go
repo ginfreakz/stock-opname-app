@@ -672,7 +672,12 @@ func showReturDialog(w fyne.Window, s *state.Session, refreshCallback func(), ex
 	})
 	submitBtn.Importance = widget.HighImportance
 
-	cancelBtn := widget.NewButton("Cancel", func() { d.Hide() })
+	cancelBtn := widget.NewButton("Cancel", func() {
+		d.Hide()
+		if refreshCallback != nil {
+			refreshCallback()
+		}
+	})
 	cancelBtn.Importance = widget.DangerImportance
 	var buttons *fyne.Container
 
@@ -871,7 +876,9 @@ func showViewReturDialog(w fyne.Window, s *state.Session, headerID uuid.UUID) {
 	itemsTable.SetColumnWidth(4, 150) // Total (Absorb the 40px)
 
 	var d dialog.Dialog
-	closeBtn := widget.NewButton("Close", func() { d.Hide() })
+	closeBtn := widget.NewButton("Close", func() {
+		d.Hide()
+	})
 
 	content := container.NewBorder(
 		container.NewVBox(
@@ -938,9 +945,11 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	var selectedRow int = -1
 	var refreshTable func()
 
+	var isDialogOpen bool
+	var lastDialogTime time.Time
+
 	// loadData := func(keyword string, sfilt string) {
 	loadData := func(keyword string) {
-		selectedRow = -1
 		var headers []models.ReturHeader
 		var err error
 		if keyword == "" {
@@ -1046,16 +1055,22 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 						editBtn.Enable()
 					}
 					editBtn.OnTapped = func() {
+						if isDialogOpen {
+							return
+						}
+						isDialogOpen = true
 						if editBtnStatus == "VOID" {
+							isDialogOpen = false
 							dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
 							return
 						}
 						retur, err := s.ReturRepo.GetByID(editBtnID)
 						if err != nil {
+							isDialogOpen = false
 							dialog.ShowError(err, w)
 							return
 						}
-						showReturDialog(w, s, refreshTable, retur, true)
+						showReturDialog(w, s, func() { isDialogOpen = false; refreshTable() }, retur, true)
 					}
 					editBtn.Show()
 				}
@@ -1065,7 +1080,7 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	table.SetColumnWidth(0, 150)
 	table.SetColumnWidth(1, 240)
-	table.SetColumnWidth(2, 290)
+	table.SetColumnWidth(2, 355)
 	table.SetColumnWidth(3, 190)
 	table.SetColumnWidth(4, 50) // Edit button
 
@@ -1095,10 +1110,8 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		safeFocus()
 	}
 
-	var lastDialogTime time.Time
-
 	handleKey := func(k *fyne.KeyEvent) {
-		if time.Since(lastDialogTime) < 500*time.Millisecond {
+		if time.Since(lastDialogTime) < 500*time.Millisecond || isDialogOpen {
 			return
 		}
 
@@ -1106,22 +1119,26 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 		case fyne.KeyInsert:
 			lastDialogTime = time.Now()
-			showReturDialog(w, s, refreshTable, nil, false)
+			isDialogOpen = true
+			showReturDialog(w, s, func() { isDialogOpen = false; refreshTable() }, nil, false)
 
 		// Edit nota
 		case fyne.KeyE:
 			lastDialogTime = time.Now()
 			if selectedRow >= 0 && selectedRow < len(data) {
+				isDialogOpen = true
 				if data[selectedRow].Status == "VOID" {
+					isDialogOpen = false
 					dialog.ShowInformation("Info", "Nota VOID tidak bisa diedit!", w)
 					return
 				}
 				retur, err := s.ReturRepo.GetByID(data[selectedRow].ID)
 				if err != nil {
+					isDialogOpen = false
 					dialog.ShowError(err, w)
 					return
 				}
-				showReturDialog(w, s, refreshTable, retur, true)
+				showReturDialog(w, s, func() { isDialogOpen = false; refreshTable() }, retur, true)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}
@@ -1130,12 +1147,14 @@ func ReturPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		case fyne.KeyV:
 			lastDialogTime = time.Now()
 			if selectedRow >= 0 && selectedRow < len(data) {
+				isDialogOpen = true
 				retur, err := s.ReturRepo.GetByID(data[selectedRow].ID)
 				if err != nil {
+					isDialogOpen = false
 					dialog.ShowError(err, w)
 					return
 				}
-				showReturDialog(w, s, refreshTable, retur, false)
+				showReturDialog(w, s, func() { isDialogOpen = false; refreshTable() }, retur, false)
 			} else {
 				dialog.ShowInformation("Info", "Pilih nota terlebih dahulu!", w)
 			}

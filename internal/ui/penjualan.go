@@ -590,7 +590,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	itemsTable.SetColumnWidth(3, 120) // Harga
 
 	if existingData != nil && !isEditMode {
-		itemsTable.SetColumnWidth(4, 160) // Absorb Delete button width (120+40)
+		itemsTable.SetColumnWidth(4, 180) // Absorb Delete button width
 		itemsTable.SetColumnWidth(5, 0)   // Hide edit button for readonly mode
 	} else {
 		itemsTable.SetColumnWidth(4, 120) // Total
@@ -981,7 +981,6 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// Load data from database
 	// loadData := func(keyword string, sfilt string) {
 	loadData := func(keyword string) {
-		selectedRow = -1
 		var headers []models.SellHeader
 		var err error
 
@@ -1146,7 +1145,7 @@ func PenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	table.SetColumnWidth(0, 120)
 	table.SetColumnWidth(1, 200)
-	table.SetColumnWidth(2, 280)
+	table.SetColumnWidth(2, 350)
 	table.SetColumnWidth(3, 160)
 	table.SetColumnWidth(4, 50) // Print
 	table.SetColumnWidth(5, 50) // Edit
