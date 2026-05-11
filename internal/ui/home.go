@@ -201,6 +201,8 @@ func HomePage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	btnLaporan := widget.NewButton("Laporan Penjualan Harian", func() {
 		w.SetContent(LaporanPenjualanPage(w, s))
 	})
+	btnLaporan.Importance = widget.SuccessImportance
+
 	btnHapus := widget.NewButton("Hapus Data", func() {
 		showDeleteDataDialog(w, s)
 	})
