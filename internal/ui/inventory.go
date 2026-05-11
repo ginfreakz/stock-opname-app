@@ -39,6 +39,11 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 	qty := widget.NewEntry()
 	price := widget.NewEntry()
 
+	// Focus flow: kode → nama → qty → price → submit
+	kode.OnSubmitted = func(string) { w.Canvas().Focus(nama) }
+	nama.OnSubmitted = func(string) { w.Canvas().Focus(qty) }
+	qty.OnSubmitted = func(string) { w.Canvas().Focus(price) }
+
 	form := widget.NewForm(
 		widget.NewFormItem("Kode", kode),
 		widget.NewFormItem("Nama", nama),
@@ -95,6 +100,9 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 	})
 	submitBtn.Importance = widget.HighImportance
 
+	// Enter on last field triggers submit
+	price.OnSubmitted = func(string) { submitBtn.OnTapped() }
+
 	cancelBtn := widget.NewButton("Cancel", func() {
 		d.Hide()
 		*dialogOpen = false
@@ -128,6 +136,10 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 
 	price := widget.NewEntry()
 	price.SetText(item.Price)
+
+	// Focus flow: nama → qty → price → submit (kode is disabled)
+	nama.OnSubmitted = func(string) { w.Canvas().Focus(qty) }
+	qty.OnSubmitted = func(string) { w.Canvas().Focus(price) }
 
 	form := widget.NewForm(
 		widget.NewFormItem("Kode", kode),
@@ -185,6 +197,9 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 		}
 	})
 	submitBtn.Importance = widget.HighImportance
+
+	// Enter on last field triggers submit
+	price.OnSubmitted = func(string) { submitBtn.OnTapped() }
 
 	cancelBtn := widget.NewButton("Cancel", func() {
 		d.Hide()
