@@ -62,10 +62,10 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	// Use Labels in preview mode, Entries in edit/new mode
 	var noNotaWidget fyne.CanvasObject
 	var customerWidget fyne.CanvasObject
-	
+
 	noNota := widget.NewEntry()
 	customer := widget.NewEntry()
-	
+
 	noNotaLabel := widget.NewLabel("")
 	noNotaLabel.TextStyle = fyne.TextStyle{Bold: false}
 	customerLabel := widget.NewLabel("")
@@ -315,7 +315,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		noNotaWidget = noNota
 		customerWidget = customer
 	}
-	
+
 	// Header form
 	headerForm := widget.NewForm(
 		widget.NewFormItem("Tgl. Nota", tglNotaContainer),

@@ -18,11 +18,11 @@ func NewItemRepository(db *sqlx.DB) *ItemRepository {
 
 func (r *ItemRepository) GetAll() ([]models.Item, error) {
 	var items []models.Item
-	query := `SELECT id, code, name, qty, price, 
+	query := `SELECT id, code, "name", qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE deleted_at IS NULL 
-			  ORDER BY name`
+			  ORDER BY "name"`
 
 	err := r.db.Select(&items, query)
 	return items, err
@@ -30,7 +30,7 @@ func (r *ItemRepository) GetAll() ([]models.Item, error) {
 
 func (r *ItemRepository) GetByID(id uuid.UUID) (*models.Item, error) {
 	var item models.Item
-	query := `SELECT id, code, name, qty, price, 
+	query := `SELECT id, code, "name", qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE id = $1 AND deleted_at IS NULL`
@@ -45,10 +45,10 @@ func (r *ItemRepository) GetByID(id uuid.UUID) (*models.Item, error) {
 
 func (r *ItemRepository) GetByCode(code string) (*models.Item, error) {
 	var item models.Item
-	query := `SELECT id, code, name, qty, price, 
+	query := `SELECT id, code, "name", qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
-			  WHERE (UPPER(code) ILIKE UPPER($1) OR UPPER(name) ILIKE UPPER($1)) AND deleted_at IS NULL`
+			  WHERE (code ILIKE $1 OR "name" ILIKE $1) AND deleted_at IS NULL`
 
 	err := r.db.Get(&item, query, "%"+code+"%")
 	if err != nil {
@@ -62,7 +62,7 @@ func (r *ItemRepository) Create(item *models.Item) error {
 	item.ID = uuid.New()
 	item.CreatedAt = time.Now()
 
-	query := `INSERT INTO items (id, code, name, qty, price, created_at, created_by) 
+	query := `INSERT INTO items (id, code, "name", qty, price, created_at, created_by) 
 			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err := r.db.Exec(query, item.ID, item.Code, item.Name, item.Qty,
@@ -75,7 +75,7 @@ func (r *ItemRepository) Update(item *models.Item) error {
 	item.UpdatedAt = &now
 
 	query := `UPDATE items 
-			  SET name = $1, qty = $2, price = $3, 
+			  SET "name" = $1, qty = $2, price = $3, 
 			      updated_at = $4, updated_by = $5 
 			  WHERE id = $6`
 
@@ -96,12 +96,12 @@ func (r *ItemRepository) Delete(id uuid.UUID, deletedBy uuid.UUID) error {
 
 func (r *ItemRepository) Search(keyword string) ([]models.Item, error) {
 	var items []models.Item
-	query := `SELECT id, code, name, qty, price, 
+	query := `SELECT id, code, "name", qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
 			  WHERE deleted_at IS NULL 
-			  AND (LOWER(code) LIKE LOWER($1) OR LOWER(name) LIKE LOWER($1))
-			  ORDER BY name`
+			  AND (code ILIKE $1 OR "name" ILIKE $1)
+			  ORDER BY "name"`
 
 	searchPattern := "%" + keyword + "%"
 	err := r.db.Select(&items, query, searchPattern)

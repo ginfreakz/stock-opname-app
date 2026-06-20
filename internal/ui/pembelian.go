@@ -53,14 +53,14 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	calendarBtn.Importance = widget.LowImportance
 
 	tglNotaContainer := container.NewBorder(nil, nil, nil, calendarBtn, tglNota)
-	
+
 	// Use Labels in preview mode, Entries in edit/new mode
 	var noNotaWidget fyne.CanvasObject
 	var vendorWidget fyne.CanvasObject
-	
+
 	noNota := widget.NewEntry()
 	vendor := widget.NewEntry()
-	
+
 	noNotaLabel := widget.NewLabel("")
 	noNotaLabel.TextStyle = fyne.TextStyle{Bold: false}
 	vendorLabel := widget.NewLabel("")
@@ -284,7 +284,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 		noNotaWidget = noNota
 		vendorWidget = vendor
 	}
-	
+
 	headerForm := widget.NewForm(
 		widget.NewFormItem("Tgl. Nota", tglNotaContainer),
 		widget.NewFormItem("No. Nota", noNotaWidget),
@@ -948,7 +948,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			text := canvas.NewText("", color.Black)
 			text.TextSize = 13
-			
+
 			editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), nil)
 			editBtn.Importance = widget.LowImportance
 			return container.NewMax(bg, text, container.NewCenter(editBtn))
@@ -957,7 +957,7 @@ func PembelianPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			cont := cell.(*fyne.Container)
 			bg := cont.Objects[0].(*canvas.Rectangle)
 			text := cont.Objects[1].(*canvas.Text)
-			
+
 			btnCont := cont.Objects[2].(*fyne.Container)
 			editBtn := btnCont.Objects[0].(*widget.Button)
 			editBtn.Hide()
