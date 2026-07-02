@@ -401,8 +401,8 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 
 		newItem := PembelianItem{
 			ItemID:     selectedItem.ID,
-			KodeBarang: kodeBarang.Text,
-			NamaBarang: namaBarang.Text,
+			KodeBarang: selectedItem.Code,
+			NamaBarang: selectedItem.Name,
 			Qty:        qty.Text,
 			Harga:      FormatCurrency(hargaVal),
 			Total:      FormatCurrency(total),

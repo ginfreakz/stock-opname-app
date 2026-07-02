@@ -33,7 +33,7 @@ func (r *ItemRepository) GetByID(id uuid.UUID) (*models.Item, error) {
 	query := `SELECT id, code, "name", qty, price, 
 			  created_at, updated_at, deleted_at, created_by, updated_by 
 			  FROM items 
-			  WHERE id = $1 AND deleted_at IS NULL`
+			  WHERE id = $1`
 
 	err := r.db.Get(&item, query, id)
 	if err != nil {
