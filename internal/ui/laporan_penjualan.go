@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -15,6 +16,11 @@ import (
 
 	"fyne-app/internal/state"
 )
+
+var laporanMonthOptions = []string{
+	"Semua", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+}
 
 type LaporanRow struct {
 	Date             time.Time
@@ -232,21 +238,86 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 16
 
-	search := widget.NewEntry()
-	search.SetPlaceHolder("Search tanggal (YYYY-MM-DD)...")
+	whiteLabel := func(text string) *canvas.Text {
+		t := canvas.NewText(text, color.White)
+		t.TextStyle = fyne.TextStyle{Bold: true}
+		return t
+	}
 
-	header := container.NewGridWithColumns(3, backBtn, container.NewCenter(title), container.NewMax(search))
+	// applyFilter is assigned below, once allData/table exist; declared early so
+	// the date-picker callbacks (built as part of the header) can already call it.
+	var applyFilter func()
 
+	yearSelect := widget.NewSelect([]string{"Semua"}, nil)
+	yearSelect.PlaceHolder = "Tahun"
+
+	monthSelect := widget.NewSelect(laporanMonthOptions, nil)
+	monthSelect.PlaceHolder = "Bulan"
+
+	var dariDate, sampaiDate string
+
+	dariLabel := whiteLabel("-")
+	sampaiLabel := whiteLabel("-")
+
+	dariBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+		ShowDatePickerDialog(w, dariDate, func(selectedDate string) {
+			dariDate = selectedDate
+			dariLabel.Text = selectedDate
+			dariLabel.Refresh()
+			if applyFilter != nil {
+				applyFilter()
+			}
+		})
+	})
+	dariBtn.Importance = widget.LowImportance
+
+	sampaiBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+		ShowDatePickerDialog(w, sampaiDate, func(selectedDate string) {
+			sampaiDate = selectedDate
+			sampaiLabel.Text = selectedDate
+			sampaiLabel.Refresh()
+			if applyFilter != nil {
+				applyFilter()
+			}
+		})
+	})
+	sampaiBtn.Importance = widget.LowImportance
+
+	clearRangeBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		dariDate = ""
+		sampaiDate = ""
+		dariLabel.Text = "-"
+		dariLabel.Refresh()
+		sampaiLabel.Text = "-"
+		sampaiLabel.Refresh()
+		if applyFilter != nil {
+			applyFilter()
+		}
+	})
+	clearRangeBtn.Importance = widget.LowImportance
+
+	filterRow := container.NewCenter(container.NewHBox(
+		whiteLabel("Tahun:"), yearSelect,
+		whiteLabel("Bulan:"), monthSelect,
+		whiteLabel("Dari:"), dariLabel, dariBtn,
+		whiteLabel("Sampai:"), sampaiLabel, sampaiBtn,
+		clearRangeBtn,
+	))
+
+	header := container.NewVBox(
+		container.NewBorder(nil, nil, backBtn, nil, container.NewCenter(title)),
+		filterRow,
+	)
+
+	var allData []LaporanRow
 	var data []LaporanRow
 	var selectedRow int = -1
 	var table *widget.Table
 
-	loadData := func(keyword string) {
-		selectedRow = -1
-
-		// Fetch wide date range (1 year back to today)
+	// Fetch the full sales history once; filtering by day/month/year happens client-side
+	fetchData := func() {
 		now := time.Now()
-		startDate := time.Date(now.Year()-1, now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		startDate := time.Date(2000, 1, 1, 0, 0, 0, 0, now.Location())
 		endDate := now.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
 		reports, err := s.SellRepo.GetDailyReport(startDate, endDate)
@@ -255,22 +326,90 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			return
 		}
 
-		data = nil
+		allData = nil
+		yearSet := map[int]bool{}
 		for _, r := range reports {
-			dateStr := r.SellDate.Format("2006-01-02")
-			if keyword != "" && !containsCI(dateStr, keyword) {
-				continue
-			}
-			data = append(data, LaporanRow{
+			allData = append(allData, LaporanRow{
 				Date:             r.SellDate,
-				DateStr:          dateStr,
+				DateStr:          r.SellDate.Format("2006-01-02"),
 				TransactionCount: fmt.Sprintf("%d", r.TransactionCount),
 				TotalAmount:      FormatCurrency(r.TotalAmount),
 			})
+			yearSet[r.SellDate.Year()] = true
+		}
+
+		years := make([]int, 0, len(yearSet))
+		for y := range yearSet {
+			years = append(years, y)
+		}
+		if len(years) == 0 {
+			years = append(years, now.Year())
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(years)))
+
+		yearOptions := []string{"Semua"}
+		for _, y := range years {
+			yearOptions = append(yearOptions, fmt.Sprintf("%d", y))
+		}
+		yearSelect.Options = yearOptions
+		yearSelect.Refresh()
+	}
+
+	applyFilter = func() {
+		selectedRow = -1
+
+		year := yearSelect.Selected
+		month := monthSelect.Selected
+
+		var startFilter, endFilter time.Time
+		hasStart := dariDate != ""
+		hasEnd := sampaiDate != ""
+		if hasStart {
+			startFilter, _ = time.Parse("2006-01-02", dariDate)
+		}
+		if hasEnd {
+			endFilter, _ = time.Parse("2006-01-02", sampaiDate)
+		}
+		if hasStart && hasEnd && startFilter.After(endFilter) {
+			startFilter, endFilter = endFilter, startFilter
+		}
+
+		data = nil
+		for _, r := range allData {
+			if year != "" && year != "Semua" && fmt.Sprintf("%d", r.Date.Year()) != year {
+				continue
+			}
+			if month != "" && month != "Semua" {
+				monthNum := 0
+				for i, m := range laporanMonthOptions {
+					if m == month {
+						monthNum = i // index doubles as month number (1=Januari, ...)
+						break
+					}
+				}
+				if int(r.Date.Month()) != monthNum {
+					continue
+				}
+			}
+			rDate := time.Date(r.Date.Year(), r.Date.Month(), r.Date.Day(), 0, 0, 0, 0, r.Date.Location())
+			if hasStart && rDate.Before(startFilter) {
+				continue
+			}
+			if hasEnd && rDate.After(endFilter) {
+				continue
+			}
+			data = append(data, r)
+		}
+
+		if table != nil {
+			table.Refresh()
 		}
 	}
 
-	loadData("")
+	fetchData()
+	yearSelect.SetSelected("Semua")
+	monthSelect.SetSelected("Semua")
+	applyFilter()
 
 	// Table
 	colHeaders := []string{"Tanggal", "Jumlah Transaksi", "Total Penjualan"}
@@ -345,11 +484,8 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 	}
 
-	search.OnChanged = func(keyword string) {
-		selectedRow = -1
-		loadData(keyword)
-		table.Refresh()
-	}
+	yearSelect.OnChanged = func(string) { applyFilter() }
+	monthSelect.OnChanged = func(string) { applyFilter() }
 
 
 	var lastDialogTime time.Time
