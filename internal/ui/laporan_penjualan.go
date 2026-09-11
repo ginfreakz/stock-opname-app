@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -23,10 +24,12 @@ var laporanMonthOptions = []string{
 }
 
 type LaporanRow struct {
-	Date             time.Time
-	DateStr          string
-	TransactionCount string
-	TotalAmount      string
+	Date                time.Time
+	DateStr             string
+	TransactionCount    string
+	TotalAmount         string
+	RawTotalAmount      float64
+	RawTransactionCount int
 }
 
 func showLaporanDetailDialog(w fyne.Window, s *state.Session, date time.Time, onClose func()) {
@@ -223,6 +226,110 @@ func showLaporanDetailDialog(w fyne.Window, s *state.Session, date time.Time, on
 	d.Show()
 }
 
+type pillButton struct {
+	widget.BaseWidget
+	Text     string
+	Active   bool
+	OnTapped func()
+	MinWidth float32
+
+	bg      *canvas.Rectangle
+	label   *canvas.Text
+	content *fyne.Container
+}
+
+func newPillButton(text string, minWidth float32, active bool, onTapped func()) *pillButton {
+	b := &pillButton{
+		Text:     text,
+		Active:   active,
+		OnTapped: onTapped,
+		MinWidth: minWidth,
+	}
+
+	b.bg = canvas.NewRectangle(color.NRGBA{R: 45, G: 52, B: 65, A: 240})
+	b.bg.CornerRadius = 6
+	b.bg.StrokeWidth = 1
+	b.bg.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 45}
+
+	b.label = canvas.NewText(text, color.White)
+	b.label.TextStyle = fyne.TextStyle{Bold: true}
+	b.label.TextSize = 12
+	b.label.Alignment = fyne.TextAlignCenter
+
+	b.content = container.NewMax(
+		b.bg,
+		container.NewCenter(container.NewPadded(b.label)),
+	)
+
+	b.ExtendBaseWidget(b)
+	b.updateStyle()
+	return b
+}
+
+func (b *pillButton) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(b.content)
+}
+
+func (b *pillButton) SetActive(active bool) {
+	b.Active = active
+	b.updateStyle()
+}
+
+func (b *pillButton) SetText(text string) {
+	b.Text = text
+	b.label.Text = text
+	b.label.Refresh()
+}
+
+func (b *pillButton) updateStyle() {
+	if b.Active {
+		b.bg.FillColor = color.NRGBA{R: 40, G: 110, B: 230, A: 255} // Bright vibrant royal blue
+		b.bg.StrokeColor = color.NRGBA{R: 140, G: 195, B: 255, A: 255}
+		b.label.Color = color.White
+	} else {
+		b.bg.FillColor = color.NRGBA{R: 45, G: 52, B: 65, A: 240} // Sleek dark slate
+		b.bg.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 45}
+		b.label.Color = color.NRGBA{R: 215, G: 225, B: 235, A: 255}
+	}
+	b.bg.Refresh()
+	b.label.Refresh()
+}
+
+func (b *pillButton) Tapped(ev *fyne.PointEvent) {
+	if b.OnTapped != nil {
+		b.OnTapped()
+	}
+}
+
+func (b *pillButton) MouseIn(e *desktop.MouseEvent) {
+	if !b.Active {
+		b.bg.FillColor = color.NRGBA{R: 70, G: 82, B: 105, A: 255}
+		b.bg.StrokeColor = color.NRGBA{R: 140, G: 180, B: 240, A: 220}
+		b.label.Color = color.White
+		b.bg.Refresh()
+		b.label.Refresh()
+	}
+}
+
+func (b *pillButton) MouseOut() {
+	b.updateStyle()
+}
+
+func (b *pillButton) MouseMoved(e *desktop.MouseEvent) {}
+
+var _ desktop.Hoverable = (*pillButton)(nil)
+
+func (b *pillButton) MinSize() fyne.Size {
+	s := b.content.MinSize()
+	if b.MinWidth > 0 && s.Width < b.MinWidth {
+		s.Width = b.MinWidth
+	}
+	if s.Height < 32 {
+		s.Height = 32
+	}
+	return s
+}
+
 func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// Background
 	bg := canvas.NewImageFromFile("assets/bg-login.jpg")
@@ -256,57 +363,132 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	var dariDate, sampaiDate string
 
-	dariLabel := whiteLabel("-")
-	sampaiLabel := whiteLabel("-")
+	var btnBulanIni, btnTahunIni, btnSemua *pillButton
+	var btnDari, btnSampai, btnClearRange *pillButton
 
-	dariBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+	btnDari = newPillButton("Dari: -", 100, false, func() {
 		ShowDatePickerDialog(w, dariDate, func(selectedDate string) {
 			dariDate = selectedDate
-			dariLabel.Text = selectedDate
-			dariLabel.Refresh()
+			btnDari.SetText("Dari: " + selectedDate)
+			btnDari.SetActive(true)
 			if applyFilter != nil {
 				applyFilter()
 			}
 		})
 	})
-	dariBtn.Importance = widget.LowImportance
 
-	sampaiBtn := widget.NewButtonWithIcon("", theme.CalendarIcon(), func() {
+	btnSampai = newPillButton("Sampai: -", 100, false, func() {
 		ShowDatePickerDialog(w, sampaiDate, func(selectedDate string) {
 			sampaiDate = selectedDate
-			sampaiLabel.Text = selectedDate
-			sampaiLabel.Refresh()
+			btnSampai.SetText("Sampai: " + selectedDate)
+			btnSampai.SetActive(true)
 			if applyFilter != nil {
 				applyFilter()
 			}
 		})
 	})
-	sampaiBtn.Importance = widget.LowImportance
 
-	clearRangeBtn := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+	btnClearRange = newPillButton("✕", 32, false, func() {
 		dariDate = ""
 		sampaiDate = ""
-		dariLabel.Text = "-"
-		dariLabel.Refresh()
-		sampaiLabel.Text = "-"
-		sampaiLabel.Refresh()
+		btnDari.SetText("Dari: -")
+		btnDari.SetActive(false)
+		btnSampai.SetText("Sampai: -")
+		btnSampai.SetActive(false)
 		if applyFilter != nil {
 			applyFilter()
 		}
 	})
-	clearRangeBtn.Importance = widget.LowImportance
 
-	filterRow := container.NewCenter(container.NewHBox(
+	btnBulanIni = newPillButton("Bulan Ini", 85, false, func() {
+		now := time.Now()
+		currentYear := fmt.Sprintf("%d", now.Year())
+		currentMonth := laporanMonthOptions[int(now.Month())]
+		dariDate = ""
+		sampaiDate = ""
+		btnDari.SetText("Dari: -")
+		btnDari.SetActive(false)
+		btnSampai.SetText("Sampai: -")
+		btnSampai.SetActive(false)
+		yearSelect.SetSelected(currentYear)
+		monthSelect.SetSelected(currentMonth)
+	})
+
+	btnTahunIni = newPillButton("Tahun Ini", 85, false, func() {
+		now := time.Now()
+		currentYear := fmt.Sprintf("%d", now.Year())
+		dariDate = ""
+		sampaiDate = ""
+		btnDari.SetText("Dari: -")
+		btnDari.SetActive(false)
+		btnSampai.SetText("Sampai: -")
+		btnSampai.SetActive(false)
+		yearSelect.SetSelected(currentYear)
+		monthSelect.SetSelected("Semua")
+	})
+
+	btnSemua = newPillButton("Semua", 75, true, func() {
+		dariDate = ""
+		sampaiDate = ""
+		btnDari.SetText("Dari: -")
+		btnDari.SetActive(false)
+		btnSampai.SetText("Sampai: -")
+		btnSampai.SetActive(false)
+		yearSelect.SetSelected("Semua")
+		monthSelect.SetSelected("Semua")
+	})
+
+	separator := func() fyne.CanvasObject {
+		sep := canvas.NewText("│", color.NRGBA{R: 255, G: 255, B: 255, A: 45})
+		sep.TextStyle = fyne.TextStyle{Bold: true}
+		return sep
+	}
+
+	filterRow := container.NewHBox(
+		btnBulanIni,
+		btnTahunIni,
+		btnSemua,
+		separator(),
 		whiteLabel("Tahun:"), yearSelect,
 		whiteLabel("Bulan:"), monthSelect,
-		whiteLabel("Dari:"), dariLabel, dariBtn,
-		whiteLabel("Sampai:"), sampaiLabel, sampaiBtn,
-		clearRangeBtn,
-	))
+		separator(),
+		btnDari,
+		whiteLabel("s/d"),
+		btnSampai,
+		btnClearRange,
+	)
+
+	filterCardBg := canvas.NewRectangle(color.NRGBA{R: 22, G: 27, B: 38, A: 220})
+	filterCardBg.CornerRadius = 8
+	filterCardBg.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 35}
+	filterCardBg.StrokeWidth = 1
+
+	filterCard := container.NewCenter(
+		container.NewGridWrap(
+			fyne.NewSize(950, 48),
+			container.NewMax(
+				filterCardBg,
+				container.NewCenter(filterRow),
+			),
+		),
+	)
+
+	periodeInfoText := canvas.NewText("Periode: Semua Data", color.NRGBA{R: 148, G: 163, B: 184, A: 255})
+	periodeInfoText.TextStyle = fyne.TextStyle{Italic: true}
+	periodeInfoText.TextSize = 12
+
+	totalColSummaryLeft := canvas.NewText("TOTAL (SUM): 0 Transaksi (0 Hari)", color.White)
+	totalColSummaryLeft.TextStyle = fyne.TextStyle{Bold: true}
+	totalColSummaryLeft.TextSize = 14
+
+	totalColSummaryRight := canvas.NewText("GRAND TOTAL: Rp 0", color.NRGBA{R: 74, G: 222, B: 128, A: 255})
+	totalColSummaryRight.TextStyle = fyne.TextStyle{Bold: true}
+	totalColSummaryRight.TextSize = 15
 
 	header := container.NewVBox(
 		container.NewBorder(nil, nil, backBtn, nil, container.NewCenter(title)),
-		filterRow,
+		filterCard,
+		container.NewCenter(periodeInfoText),
 	)
 
 	var allData []LaporanRow
@@ -318,7 +500,7 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	fetchData := func() {
 		now := time.Now()
 		startDate := time.Date(2000, 1, 1, 0, 0, 0, 0, now.Location())
-		endDate := now.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+		endDate := time.Date(now.Year()+5, 12, 31, 23, 59, 59, 0, now.Location())
 
 		reports, err := s.SellRepo.GetDailyReport(startDate, endDate)
 		if err != nil {
@@ -330,10 +512,12 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		yearSet := map[int]bool{}
 		for _, r := range reports {
 			allData = append(allData, LaporanRow{
-				Date:             r.SellDate,
-				DateStr:          r.SellDate.Format("2006-01-02"),
-				TransactionCount: fmt.Sprintf("%d", r.TransactionCount),
-				TotalAmount:      FormatCurrency(r.TotalAmount),
+				Date:                r.SellDate,
+				DateStr:             r.SellDate.Format("2006-01-02"),
+				TransactionCount:    fmt.Sprintf("%d", r.TransactionCount),
+				TotalAmount:         FormatCurrency(r.TotalAmount),
+				RawTotalAmount:      r.TotalAmount,
+				RawTransactionCount: r.TransactionCount,
 			})
 			yearSet[r.SellDate.Year()] = true
 		}
@@ -375,6 +559,9 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		}
 
 		data = nil
+		var sumTotalAmount float64
+		var sumTransactionCount int
+
 		for _, r := range allData {
 			if year != "" && year != "Semua" && fmt.Sprintf("%d", r.Date.Year()) != year {
 				continue
@@ -399,6 +586,64 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				continue
 			}
 			data = append(data, r)
+			sumTotalAmount += r.RawTotalAmount
+			sumTransactionCount += r.RawTransactionCount
+		}
+
+		// Update metrics
+		activeDays := len(data)
+		formattedSum := FormatCurrency(sumTotalAmount)
+		totalColSummaryLeft.Text = fmt.Sprintf("TOTAL %d Transaksi (%d Hari)", sumTransactionCount, activeDays)
+		totalColSummaryLeft.Refresh()
+
+		totalColSummaryRight.Text = "GRAND TOTAL: " + formattedSum
+		totalColSummaryRight.Refresh()
+
+		// Update Periode label
+		var periodeDesc string
+		if hasStart && hasEnd {
+			periodeDesc = fmt.Sprintf("Periode: %s s/d %s", startFilter.Format("2006-01-02"), endFilter.Format("2006-01-02"))
+		} else if hasStart {
+			periodeDesc = fmt.Sprintf("Periode: Mulai %s", startFilter.Format("2006-01-02"))
+		} else if hasEnd {
+			periodeDesc = fmt.Sprintf("Periode: Sampai %s", endFilter.Format("2006-01-02"))
+		} else if year != "" && year != "Semua" && month != "" && month != "Semua" {
+			periodeDesc = fmt.Sprintf("Periode: %s %s", month, year)
+		} else if year != "" && year != "Semua" {
+			periodeDesc = fmt.Sprintf("Periode: Tahun %s", year)
+		} else if month != "" && month != "Semua" {
+			periodeDesc = fmt.Sprintf("Periode: Bulan %s (Semua Tahun)", month)
+		} else {
+			periodeDesc = "Periode: Semua Data"
+		}
+		periodeInfoText.Text = periodeDesc
+		periodeInfoText.Refresh()
+
+		// Sync pill active states
+		now := time.Now()
+		curY := fmt.Sprintf("%d", now.Year())
+		curM := laporanMonthOptions[int(now.Month())]
+
+		if dariDate != "" || sampaiDate != "" {
+			btnBulanIni.SetActive(false)
+			btnTahunIni.SetActive(false)
+			btnSemua.SetActive(false)
+		} else if year == curY && month == curM {
+			btnBulanIni.SetActive(true)
+			btnTahunIni.SetActive(false)
+			btnSemua.SetActive(false)
+		} else if year == curY && (month == "" || month == "Semua") {
+			btnBulanIni.SetActive(false)
+			btnTahunIni.SetActive(true)
+			btnSemua.SetActive(false)
+		} else if (year == "" || year == "Semua") && (month == "" || month == "Semua") {
+			btnBulanIni.SetActive(false)
+			btnTahunIni.SetActive(false)
+			btnSemua.SetActive(true)
+		} else {
+			btnBulanIni.SetActive(false)
+			btnTahunIni.SetActive(false)
+			btnSemua.SetActive(false)
 		}
 
 		if table != nil {
@@ -486,7 +731,6 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 
 	yearSelect.OnChanged = func(string) { applyFilter() }
 	monthSelect.OnChanged = func(string) { applyFilter() }
-
 
 	var lastDialogTime time.Time
 	var isDialogOpen bool
@@ -589,9 +833,38 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	// Table wrapper
 	tableWrapper := container.NewCenter(
 		container.NewGridWrap(
-			fyne.NewSize(950, 480),
+			fyne.NewSize(950, 440),
 			focusWrapper,
 		),
+	)
+
+	// Bottom total bar
+	footerTotalBg := canvas.NewRectangle(color.NRGBA{R: 20, G: 25, B: 35, A: 240})
+	footerTotalBg.CornerRadius = 6
+	footerTotalBg.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40}
+	footerTotalBg.StrokeWidth = 1
+
+	footerTotalContent := container.NewBorder(
+		nil,
+		nil,
+		container.NewHBox(canvas.NewText("  ", color.Transparent), totalColSummaryLeft),
+		container.NewHBox(totalColSummaryRight, canvas.NewText("  ", color.Transparent)),
+		nil,
+	)
+
+	footerTotalBar := container.NewCenter(
+		container.NewGridWrap(
+			fyne.NewSize(950, 40),
+			container.NewMax(
+				footerTotalBg,
+				container.NewPadded(footerTotalContent),
+			),
+		),
+	)
+
+	tableSection := container.NewVBox(
+		tableWrapper,
+		footerTotalBar,
 	)
 
 	// Footer
@@ -603,14 +876,14 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	footer.Alignment = fyne.TextAlignCenter
 
 	// Content
-	content := container.NewBorder(header, footer, nil, nil, tableWrapper)
+	content := container.NewBorder(header, footer, nil, nil, tableSection)
 
 	// Panel
 	rect := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 30, A: 180})
 	rect.CornerRadius = 12
 	rect.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 40}
 	rect.StrokeWidth = 1
-	rect.SetMinSize(fyne.NewSize(1050, 650))
+	rect.SetMinSize(fyne.NewSize(1050, 670))
 
 	panel := container.NewMax(
 		rect,
@@ -625,7 +898,6 @@ func LaporanPenjualanPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 			safeFocus()
 		})
 	})
-
 
 	return container.NewMax(
 		bg,
