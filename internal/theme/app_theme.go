@@ -44,6 +44,19 @@ func (AppTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color
 	// Primary color — used by Select widget focus, HighImportance buttons, etc.
 	case theme.ColorNamePrimary:
 		return color.NRGBA{R: 55, G: 90, B: 220, A: 255}
+
+	// Hover and interaction states - Keep bright background so text remains clearly readable
+	case theme.ColorNameHover:
+		return color.NRGBA{R: 232, G: 238, B: 248, A: 255}
+
+	case theme.ColorNamePressed:
+		return color.NRGBA{R: 218, G: 226, B: 240, A: 255}
+
+	case theme.ColorNameFocus:
+		return color.NRGBA{R: 55, G: 90, B: 220, A: 120}
+
+	case theme.ColorNameSelection:
+		return color.NRGBA{R: 55, G: 90, B: 220, A: 200}
 	}
 
 	return theme.DefaultTheme().Color(name, variant)
