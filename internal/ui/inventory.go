@@ -24,12 +24,13 @@ import (
 )
 
 type InventoryItem struct {
-	ID         uuid.UUID
-	Code       string
-	Name       string
-	Qty        string
-	Price      string
-	HargaModal string
+	ID             uuid.UUID
+	Code           string
+	Name           string
+	Qty            string
+	Price          string
+	HargaModal     string
+	TotalUangModal string
 }
 
 func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, refreshCallback func()) {
@@ -57,7 +58,7 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 
 	var d dialog.Dialog
 
-	submitBtn := widget.NewButton("Submit", func() {
+	submitBtn := NewNoHoverButton("Submit", func() {
 		if kode.Text == "" || nama.Text == "" || qty.Text == "" || price.Text == "" {
 			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
 			return
@@ -103,7 +104,7 @@ func showAddInventoryDialog(w fyne.Window, s *state.Session, dialogOpen *bool, r
 	// Enter on last field triggers submit
 	price.OnSubmitted = func(string) { submitBtn.OnTapped() }
 
-	cancelBtn := widget.NewButton("Cancel", func() {
+	cancelBtn := NewNoHoverButton("Cancel", func() {
 		d.Hide()
 		*dialogOpen = false
 	})
@@ -154,7 +155,7 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 
 	var d dialog.Dialog
 
-	submitBtn := widget.NewButton("Submit", func() {
+	submitBtn := NewNoHoverButton("Submit", func() {
 		if nama.Text == "" || qty.Text == "" || price.Text == "" {
 			dialog.ShowError(fmt.Errorf("Semua field harus diisi!"), w)
 			return
@@ -201,7 +202,7 @@ func showEditInventoryDialog(w fyne.Window, s *state.Session, item InventoryItem
 	// Enter on last field triggers submit
 	price.OnSubmitted = func(string) { submitBtn.OnTapped() }
 
-	cancelBtn := widget.NewButton("Cancel", func() {
+	cancelBtn := NewNoHoverButton("Cancel", func() {
 		d.Hide()
 		*dialogOpen = false
 	})
@@ -253,6 +254,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		"QTY",
 		"Harga",
 		"Harga Modal",
+		"Total Uang Modal",
 		"Aksi",
 	}
 
@@ -287,6 +289,10 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				hi, _ := ParseCurrencyString(data[i].HargaModal)
 				hj, _ := ParseCurrencyString(data[j].HargaModal)
 				less = hi < hj
+			case 5:
+				ti, _ := ParseCurrencyString(data[i].TotalUangModal)
+				tj, _ := ParseCurrencyString(data[j].TotalUangModal)
+				less = ti < tj
 			}
 			if !sortAscending {
 				return !less
@@ -316,19 +322,22 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		data = make([]InventoryItem, len(items))
 		for i, item := range items {
 			hargaModal := "-"
+			totalUangModal := "-"
 			if purchasePrices != nil {
 				if price, ok := purchasePrices[item.ID]; ok {
 					p := message.NewPrinter(language.Indonesian)
 					hargaModal = p.Sprintf("%.0f", price)
+					totalUangModal = p.Sprintf("%.0f", item.Qty*price)
 				}
 			}
 			data[i] = InventoryItem{
-				ID:         item.ID,
-				Code:       item.Code,
-				Name:       item.Name,
-				Qty:        fmt.Sprintf("%.0f", item.Qty),
-				Price:      fmt.Sprintf("%.0f", item.Price),
-				HargaModal: hargaModal,
+				ID:             item.ID,
+				Code:           item.Code,
+				Name:           item.Name,
+				Qty:            fmt.Sprintf("%.0f", item.Qty),
+				Price:          fmt.Sprintf("%.0f", item.Price),
+				HargaModal:     hargaModal,
+				TotalUangModal: totalUangModal,
 			}
 		}
 	}
@@ -416,6 +425,9 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 					text.Text = item.HargaModal
 					text.Alignment = fyne.TextAlignTrailing
 				case 5:
+					text.Text = item.TotalUangModal
+					text.Alignment = fyne.TextAlignTrailing
+				case 6:
 					text.Text = ""
 					text.Hide()
 					
@@ -486,12 +498,13 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	}
 
 	// ===== COLUMN WIDTH =====
-	table.SetColumnWidth(0, 120)
-	table.SetColumnWidth(1, 420) // Absorbed some extra space
-	table.SetColumnWidth(2, 100)
-	table.SetColumnWidth(3, 180)
-	table.SetColumnWidth(4, 160)
-	table.SetColumnWidth(5, 50)  // Aksi (Edit button)
+	table.SetColumnWidth(0, 110)
+	table.SetColumnWidth(1, 310)
+	table.SetColumnWidth(2, 80)
+	table.SetColumnWidth(3, 150)
+	table.SetColumnWidth(4, 150)
+	table.SetColumnWidth(5, 180)
+	table.SetColumnWidth(6, 50)  // Aksi (Edit button)
 
 	// Search functionality
 	search.OnChanged = func(keyword string) {

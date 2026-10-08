@@ -11,9 +11,30 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/widget"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
+
+// NoHoverButton is a Button that does not respond to mouse hover events (erases hover effect)
+type NoHoverButton struct {
+	widget.Button
+}
+
+var _ desktop.Hoverable = (*NoHoverButton)(nil)
+
+func NewNoHoverButton(text string, tapped func()) *NoHoverButton {
+	b := &NoHoverButton{}
+	b.Text = text
+	b.OnTapped = tapped
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *NoHoverButton) MouseIn(*desktop.MouseEvent)    {}
+func (b *NoHoverButton) MouseMoved(*desktop.MouseEvent) {}
+func (b *NoHoverButton) MouseOut()                      {}
 
 // Helper struct for displaying purchase/sell items with full details
 type DisplayItem struct {

@@ -37,7 +37,7 @@ func showDeleteDataDialog(w fyne.Window, s *state.Session) {
 	// Create custom dialog
 	var d dialog.Dialog
 
-	confirmBtn := widget.NewButton("Ya, Hapus Data", func() {
+	confirmBtn := NewNoHoverButton("Ya, Hapus Data", func() {
 		d.Hide()
 
 		// Show progress dialog
@@ -154,7 +154,7 @@ func showDeleteDataDialog(w fyne.Window, s *state.Session) {
 	})
 	confirmBtn.Importance = widget.DangerImportance
 
-	cancelBtn := widget.NewButton("Batal", func() {
+	cancelBtn := NewNoHoverButton("Batal", func() {
 		d.Hide()
 	})
 

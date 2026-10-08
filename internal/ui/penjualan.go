@@ -600,7 +600,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	// Dialog content
 	var d dialog.Dialog
 
-	submitBtn := widget.NewButton("Submit", func() {
+	submitBtn := NewNoHoverButton("Submit", func() {
 		// Validate
 		if tglNota.Text == "" || noNota.Text == "" || customer.Text == "" {
 			dialog.ShowInformation("Error", "Header data harus diisi!", w)
@@ -690,7 +690,7 @@ func showPenjualanDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	})
 	submitBtn.Importance = widget.HighImportance
 
-	cancelBtn := widget.NewButton("Cancel", func() {
+	cancelBtn := NewNoHoverButton("Cancel", func() {
 		d.Hide()
 		if refreshCallback != nil {
 			refreshCallback()

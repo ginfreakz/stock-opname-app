@@ -573,7 +573,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	}
 
 	var d dialog.Dialog
-	submitBtn := widget.NewButton("Submit", func() {
+	submitBtn := NewNoHoverButton("Submit", func() {
 		if tglNota.Text == "" || noNota.Text == "" || vendor.Text == "" {
 			dialog.ShowInformation("Error", "Header data harus diisi!", w)
 			return
@@ -653,7 +653,7 @@ func showPembelianDialog(w fyne.Window, s *state.Session, refreshCallback func()
 	})
 	submitBtn.Importance = widget.HighImportance
 
-	cancelBtn := widget.NewButton("Cancel", func() {
+	cancelBtn := NewNoHoverButton("Cancel", func() {
 		d.Hide()
 		if refreshCallback != nil {
 			refreshCallback()
