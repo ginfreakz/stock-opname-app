@@ -2,6 +2,8 @@ package theme
 
 import (
 	"image/color"
+	"runtime"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
@@ -45,9 +47,23 @@ func (AppTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color
 	case theme.ColorNamePrimary:
 		return color.NRGBA{R: 55, G: 90, B: 220, A: 255}
 
-	// Hover and interaction states - Keep bright background so text remains clearly readable
+	// Hover and interaction states - Erase mouse over (hover) effects across the entire app
 	case theme.ColorNameHover:
-		return color.NRGBA{R: 232, G: 238, B: 248, A: 255}
+		// Keep select dropdown background solid so it does not turn transparent on hover
+		var pcs [8]uintptr
+		n := runtime.Callers(2, pcs[:])
+		frames := runtime.CallersFrames(pcs[:n])
+		for {
+			frame, more := frames.Next()
+			if strings.Contains(strings.ToLower(frame.Function), "select") {
+				return color.NRGBA{R: 245, G: 245, B: 245, A: 255}
+			}
+			if !more {
+				break
+			}
+		}
+		// For buttons and all other widgets, return transparent so original background is preserved
+		return color.Transparent
 
 	case theme.ColorNamePressed:
 		return color.NRGBA{R: 218, G: 226, B: 240, A: 255}

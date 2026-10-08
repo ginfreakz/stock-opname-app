@@ -301,20 +301,8 @@ func (b *pillButton) Tapped(ev *fyne.PointEvent) {
 	}
 }
 
-func (b *pillButton) MouseIn(e *desktop.MouseEvent) {
-	if !b.Active {
-		b.bg.FillColor = color.NRGBA{R: 70, G: 82, B: 105, A: 255}
-		b.bg.StrokeColor = color.NRGBA{R: 140, G: 180, B: 240, A: 220}
-		b.label.Color = color.White
-		b.bg.Refresh()
-		b.label.Refresh()
-	}
-}
-
-func (b *pillButton) MouseOut() {
-	b.updateStyle()
-}
-
+func (b *pillButton) MouseIn(e *desktop.MouseEvent)    {}
+func (b *pillButton) MouseOut()                        {}
 func (b *pillButton) MouseMoved(e *desktop.MouseEvent) {}
 
 var _ desktop.Hoverable = (*pillButton)(nil)
