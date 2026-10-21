@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -266,6 +267,14 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	sortColumn := -1
 	sortAscending := true
 
+	itemCountLabel := canvas.NewText("Total : 0 Barang", color.White)
+	itemCountLabel.TextSize = 13
+
+	totalModalLabel := canvas.NewText("Total Uang Modal : Rp 0", color.White)
+	totalModalLabel.TextSize = 14
+	totalModalLabel.TextStyle = fyne.TextStyle{Bold: true}
+	totalModalLabel.Alignment = fyne.TextAlignTrailing
+
 	sortData := func() {
 		if sortColumn < 0 {
 			return
@@ -319,6 +328,7 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 		// Fetch latest purchase prices (harga beli) for harga modal
 		purchasePrices, _ := s.ItemRepo.GetLatestPurchasePrices()
 
+		var totalModalSum float64
 		data = make([]InventoryItem, len(items))
 		for i, item := range items {
 			hargaModal := "-"
@@ -327,7 +337,9 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				if price, ok := purchasePrices[item.ID]; ok {
 					p := message.NewPrinter(language.Indonesian)
 					hargaModal = p.Sprintf("%.0f", price)
-					totalUangModal = p.Sprintf("%.0f", item.Qty*price)
+					subtotal := item.Qty * price
+					totalUangModal = p.Sprintf("%.0f", subtotal)
+					totalModalSum += subtotal
 				}
 			}
 			data[i] = InventoryItem{
@@ -340,6 +352,12 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 				TotalUangModal: totalUangModal,
 			}
 		}
+
+		itemCountLabel.Text = fmt.Sprintf("Total : %d Barang", len(data))
+		itemCountLabel.Refresh()
+
+		totalModalLabel.Text = "Total Uang Modal : " + FormatCurrency(totalModalSum)
+		totalModalLabel.Refresh()
 	}
 
 	loadData("")
@@ -632,13 +650,25 @@ func InventoryPage(w fyne.Window, s *state.Session) fyne.CanvasObject {
 	footer.Alignment = fyne.TextAlignCenter
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
-	// ===== CENTERED TABLE WRAPPER =====
-	tableWrapper := container.NewCenter(
+	// ===== SUMMARY & CENTERED TABLE WRAPPER =====
+	summaryRow := container.NewHBox(
+		itemCountLabel,
+		layout.NewSpacer(),
+		totalModalLabel,
+	)
+
+	tableContainer := container.NewVBox(
 		container.NewGridWrap(
-			fyne.NewSize(1050, 480),
+			fyne.NewSize(1050, 450),
 			focusWrapper,
 		),
+		container.NewGridWrap(
+			fyne.NewSize(1050, 26),
+			summaryRow,
+		),
 	)
+
+	tableWrapper := container.NewCenter(tableContainer)
 
 	// ===== CONTENT =====
 	content := container.NewBorder(
